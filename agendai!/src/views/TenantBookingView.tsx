@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { 
   Scissors, CheckCircle, Clock, Calendar, 
   MapPin, Phone, MessageSquare, ArrowLeft, User, 
-  Sparkles, Check, ChevronRight, AlertCircle, Share2
+  Sparkles, Check, ChevronRight, AlertCircle, Share2, Plus, CheckSquare, Square
 } from 'lucide-react';
 import { Organization, Service, Barber, Appointment } from '../types';
 
@@ -27,7 +27,7 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
 }) => {
   const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [selectedDate, setSelectedDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
-  const [selectedService, setSelectedService] = useState<Service | null>(null);
+  const [selectedServices, setSelectedServices] = useState<Service[]>([]);
   const [selectedBarber, setSelectedBarber] = useState<Barber | null>(null);
   const [selectedTime, setSelectedTime] = useState<string>('');
   const [clientName, setClientName] = useState('');
@@ -66,17 +66,38 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
     ];
   }, [org.open_hour, org.close_hour]);
 
-  // Considera ativos todos os serviços onde active !== false
+  // Serviços ativos
   const activeServices = useMemo(() => {
     return services.filter(s => s.active !== false);
   }, [services]);
 
-  // Considera ativos todos os barbeiros onde active !== false
+  // Barbeiros ativos
   const activeBarbers = useMemo(() => {
     return barbers.filter(b => b.active !== false);
   }, [barbers]);
 
-  // Gerar link direto do WhatsApp da Barbearia com a mensagem formatada
+  // Totais calculados dos serviços selecionados
+  const totalPrice = useMemo(() => {
+    return selectedServices.reduce((sum, s) => sum + s.price, 0);
+  }, [selectedServices]);
+
+  const totalDuration = useMemo(() => {
+    return selectedServices.reduce((sum, s) => sum + (s.duration_minutes || 30), 0);
+  }, [selectedServices]);
+
+  // Alternar seleção de serviço (suporte a múltiplos serviços)
+  const toggleService = (service: Service) => {
+    setSelectedServices(prev => {
+      const isSelected = prev.some(s => s.id === service.id);
+      if (isSelected) {
+        return prev.filter(s => s.id !== service.id);
+      } else {
+        return [...prev, service];
+      }
+    });
+  };
+
+  // Gerar link direto do WhatsApp da Barbearia com a mensagem formatada incluindo todos os serviços
   const generateWhatsAppUrl = (app: Appointment) => {
     const cleanPhone = (org.phone || '').replace(/\D/g, '');
     const formattedSelectedDate = new Date((app.date || selectedDate) + 'T00:00:00').toLocaleDateString('pt-BR', {
@@ -85,6 +106,11 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
       month: 'long'
     });
 
+    const servicesListText = app.services && app.services.length > 0
+      ? app.services.map(s => `• ${s.name} - R$ ${s.price.toFixed(2)} (${s.duration_minutes} min)`).join('
+')
+      : `• ${app.service_name} - R$ ${app.price.toFixed(2)}`;
+
     const message = encodeURIComponent(
       `💈 *NOVO AGENDAMENTO ONLINE - ${org.name.toUpperCase()}*
 
@@ -92,8 +118,14 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
       `👤 *Cliente:* ${app.client_name}
 ` +
       `📱 *WhatsApp:* ${app.client_phone}
+
 ` +
-      `✂️ *Serviço:* ${app.service_name} (R$ ${app.price.toFixed(2)})
+      `✂️ *Serviços Agendados (${app.services?.length || 1}):*
+` +
+      `${servicesListText}
+
+` +
+      `💰 *Valor Total:* R$ ${app.price.toFixed(2)} (${app.duration_minutes || totalDuration} min)
 ` +
       `💈 *Profissional:* ${app.barber_name}
 ` +
@@ -105,25 +137,34 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
       `_Agendamento registrado no sistema AgendAI._`
     );
 
-    // Se o telefone começar com código do país (55) ou DDD
     const fullPhone = cleanPhone.length <= 11 ? `55${cleanPhone}` : cleanPhone;
     return `https://wa.me/${fullPhone}?text=${message}`;
   };
 
   const handleFinishBooking = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedService || !selectedBarber || !selectedTime || !clientName.trim() || !clientPhone.trim()) return;
+    if (selectedServices.length === 0 || !selectedBarber || !selectedTime || !clientName.trim() || !clientPhone.trim()) return;
+
+    const joinedNames = selectedServices.map(s => s.name).join(' + ');
 
     const newApp: Omit<Appointment, 'id'> = {
       org_id: org.id,
       client_name: clientName.trim(),
       client_phone: clientPhone.trim(),
-      service_id: selectedService.id,
-      service_name: selectedService.name,
+      service_id: selectedServices[0]?.id || '',
+      service_name: joinedNames,
+      services: selectedServices.map(s => ({
+        id: s.id,
+        name: s.name,
+        price: s.price,
+        duration_minutes: s.duration_minutes || 30,
+        category: s.category,
+      })),
+      duration_minutes: totalDuration,
       barber_id: selectedBarber.id,
       barber_name: selectedBarber.full_name,
       start_time: selectedTime,
-      price: selectedService.price,
+      price: totalPrice,
       status: 'scheduled',
       date: selectedDate,
     };
@@ -138,12 +179,11 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
     setLastCreatedAppointment(fullApp);
     setConfirmed(true);
 
-    // Redireciona opcionalmente para o WhatsApp
     const waUrl = generateWhatsAppUrl(fullApp);
     try {
       window.open(waUrl, '_blank');
     } catch {
-      // Bloqueio de popup gerenciado pelo botão na tela de confirmação
+      // Popup bloqueado gerenciado pelo botão
     }
   };
 
@@ -210,33 +250,53 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
               <div>
                 <h3 className="text-2xl font-bold text-white">Agendamento Confirmado!</h3>
                 <p className="text-xs text-slate-300 mt-1">
-                  Seu horário foi salvo com sucesso no sistema da barbearia.
+                  Seu pedido com {lastCreatedAppointment.services?.length || 1} serviço(s) foi salvo no sistema da barbearia.
                 </p>
               </div>
 
               {/* CARD DETALHADO DO AGENDAMENTO */}
-              <div className="bg-[#0B1120] p-5 rounded-2xl border border-slate-800 text-left space-y-2 text-xs">
+              <div className="bg-[#0B1120] p-5 rounded-2xl border border-slate-800 text-left space-y-3 text-xs">
                 <div className="flex justify-between">
                   <span className="text-slate-400">Cliente:</span>
                   <span className="text-white font-bold">{lastCreatedAppointment.client_name}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Serviço:</span>
-                  <span className="text-white font-bold">{lastCreatedAppointment.service_name}</span>
-                </div>
+
                 <div className="flex justify-between">
                   <span className="text-slate-400">Barbeiro:</span>
                   <span className="text-white font-bold">{lastCreatedAppointment.barber_name}</span>
                 </div>
+
                 <div className="flex justify-between">
                   <span className="text-slate-400">Data e Horário:</span>
                   <span className="text-emerald-400 font-bold font-mono text-sm">
                     {new Date((lastCreatedAppointment.date || selectedDate) + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} às {lastCreatedAppointment.start_time}
                   </span>
                 </div>
-                <div className="flex justify-between border-t border-slate-800/80 pt-2">
-                  <span className="text-slate-400">Valor:</span>
-                  <span className="text-emerald-400 font-bold font-mono text-base">R$ {lastCreatedAppointment.price.toFixed(2)}</span>
+
+                {/* LISTA DE SERVIÇOS INCLUSOS */}
+                <div className="border-t border-slate-800/80 pt-2.5 space-y-1.5">
+                  <span className="text-slate-400 font-semibold block">Serviços Selecionados:</span>
+                  {lastCreatedAppointment.services && lastCreatedAppointment.services.length > 0 ? (
+                    lastCreatedAppointment.services.map((srv, idx) => (
+                      <div key={idx} className="flex justify-between items-center text-slate-300 bg-slate-900/60 px-2.5 py-1.5 rounded-lg border border-slate-800/60">
+                        <span>• {srv.name} <span className="text-[10px] text-slate-500">({srv.duration_minutes} min)</span></span>
+                        <span className="font-mono font-bold text-white">R$ {srv.price.toFixed(2)}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="flex justify-between items-center text-slate-300">
+                      <span>• {lastCreatedAppointment.service_name}</span>
+                      <span className="font-mono font-bold text-white">R$ {lastCreatedAppointment.price.toFixed(2)}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex justify-between border-t border-slate-800/80 pt-2.5">
+                  <div>
+                    <span className="text-slate-400 block">Total a Pagar:</span>
+                    <span className="text-[11px] text-slate-500">Duração aprox: {lastCreatedAppointment.duration_minutes || totalDuration} min</span>
+                  </div>
+                  <span className="text-emerald-400 font-black font-mono text-lg">R$ {lastCreatedAppointment.price.toFixed(2)}</span>
                 </div>
               </div>
 
@@ -253,14 +313,14 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
                 </a>
 
                 <p className="text-[11px] text-slate-400">
-                  Clique no botão acima para abrir o WhatsApp e avisar a barbearia sobre sua chegada.
+                  Clique no botão acima para abrir o WhatsApp e avisar a barbearia sobre sua reserva.
                 </p>
 
                 <button
                   onClick={() => {
                     setConfirmed(false);
                     setStep(1);
-                    setSelectedService(null);
+                    setSelectedServices([]);
                     setSelectedBarber(null);
                     setSelectedTime('');
                     setClientName('');
@@ -311,41 +371,99 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
                 </div>
               )}
 
-              {/* ETAPA 2: SERVIÇO */}
+              {/* ETAPA 2: SERVIÇOS (MÚLTIPLA ESCOLHA) */}
               {step === 2 && (
                 <div className="space-y-4 animate-fadeIn">
                   <div className="flex justify-between items-center">
-                    <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
-                      <span className="w-5 h-5 rounded-full bg-emerald-500 text-slate-950 text-xs flex items-center justify-center font-bold">2</span>
-                      Selecione o Serviço
-                    </h3>
-                    <button onClick={() => setStep(1)} className="text-xs text-emerald-400 hover:underline">
+                    <div>
+                      <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                        <span className="w-5 h-5 rounded-full bg-emerald-500 text-slate-950 text-xs flex items-center justify-center font-bold">2</span>
+                        Selecione os Serviços
+                      </h3>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        Você pode selecionar mais de um serviço para o mesmo horário.
+                      </p>
+                    </div>
+                    <button onClick={() => setStep(1)} className="text-xs text-emerald-400 hover:underline shrink-0">
                       Alterar data
                     </button>
                   </div>
 
-                  <div className="space-y-2.5">
-                    {activeServices.map((service) => (
-                      <div
-                        key={service.id}
-                        onClick={() => {
-                          setSelectedService(service);
-                          setStep(3);
-                        }}
-                        className="p-4 rounded-2xl bg-[#0B1120] border border-slate-800 hover:border-emerald-500/50 cursor-pointer flex justify-between items-center transition-all group hover:bg-slate-950"
-                      >
-                        <div>
-                          <h4 className="font-bold text-white group-hover:text-emerald-400 transition-colors text-sm">{service.name}</h4>
-                          <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-1">
-                            <Clock className="w-3 h-3 text-slate-500" /> {service.duration_minutes} min • {service.category}
-                          </p>
+                  <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1">
+                    {activeServices.map((service) => {
+                      const isSelected = selectedServices.some(s => s.id === service.id);
+
+                      return (
+                        <div
+                          key={service.id}
+                          onClick={() => toggleService(service)}
+                          className={`p-4 rounded-2xl border cursor-pointer flex justify-between items-center transition-all group ${
+                            isSelected
+                              ? 'bg-emerald-950/30 border-emerald-500/70 shadow-sm'
+                              : 'bg-[#0B1120] border-slate-800 hover:border-emerald-500/40 hover:bg-slate-900/50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className={`w-6 h-6 rounded-lg flex items-center justify-center border transition-all ${
+                              isSelected 
+                                ? 'bg-emerald-500 border-emerald-400 text-slate-950' 
+                                : 'border-slate-700 bg-slate-900 text-transparent group-hover:border-slate-500'
+                            }`}>
+                              <Check className="w-4 h-4 stroke-[3]" />
+                            </div>
+
+                            <div>
+                              <h4 className={`font-bold text-sm transition-colors ${
+                                isSelected ? 'text-emerald-300' : 'text-white group-hover:text-emerald-400'
+                              }`}>
+                                {service.name}
+                              </h4>
+                              <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-1">
+                                <Clock className="w-3 h-3 text-slate-500" /> {service.duration_minutes} min • {service.category}
+                              </p>
+                            </div>
+                          </div>
+
+                          <span className={`text-sm font-bold font-mono px-3 py-1 rounded-xl border transition-all ${
+                            isSelected
+                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                              : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                          }`}>
+                            R$ {service.price.toFixed(2)}
+                          </span>
                         </div>
-                        <span className="text-sm font-bold text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-xl border border-emerald-500/20 font-mono">
-                          R$ {service.price.toFixed(2)}
-                        </span>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
+
+                  {/* BARRA DE RESUMO E AVANÇO */}
+                  {selectedServices.length > 0 ? (
+                    <div className="bg-[#0B1120] p-4 rounded-2xl border border-emerald-500/30 space-y-3 pt-3">
+                      <div className="flex justify-between items-center text-xs">
+                        <div>
+                          <span className="font-bold text-white">{selectedServices.length} serviço(s) selecionado(s)</span>
+                          <p className="text-[11px] text-slate-400">Duração estimada: {totalDuration} min</p>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-slate-400 text-[10px] uppercase tracking-wider block">Total</span>
+                          <span className="text-base font-black text-emerald-400 font-mono">R$ {totalPrice.toFixed(2)}</span>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setStep(3)}
+                        className="w-full py-3.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20"
+                      >
+                        Continuar para Escolha do Barbeiro
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="text-center text-xs text-amber-400/90 py-2">
+                      👆 Clique em um ou mais serviços acima para continuar.
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -358,7 +476,7 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
                       Escolha o Profissional
                     </h3>
                     <button onClick={() => setStep(2)} className="text-xs text-emerald-400 hover:underline">
-                      Alterar serviço
+                      Alterar serviços ({selectedServices.length})
                     </button>
                   </div>
 
@@ -393,15 +511,20 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
                   <div className="flex justify-between items-center">
                     <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
                       <span className="w-5 h-5 rounded-full bg-emerald-500 text-slate-950 text-xs flex items-center justify-center font-bold">4</span>
-                      Escolha o Horário
+                      Escolha o Horário de Início
                     </h3>
                     <button onClick={() => setStep(3)} className="text-xs text-emerald-400 hover:underline">
                       Alterar profissional
                     </button>
                   </div>
 
+                  <div className="bg-[#0B1120] p-3 rounded-xl border border-slate-800 text-xs text-slate-300 flex items-center justify-between">
+                    <span>Profissional: <strong className="text-white">{selectedBarber?.full_name}</strong></span>
+                    <span className="text-emerald-400 font-medium">Tempo previsto: {totalDuration} min</span>
+                  </div>
+
                   <p className="text-xs text-slate-400">
-                    Horários disponíveis para <strong className="text-white">{selectedBarber?.full_name}</strong> no dia <strong className="text-emerald-400">{new Date(selectedDate + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}</strong>:
+                    Horários para <strong className="text-emerald-400">{new Date(selectedDate + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}</strong>:
                   </p>
 
                   <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5 max-h-64 overflow-y-auto pr-1">
@@ -438,18 +561,32 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
                   <div className="flex justify-between items-center">
                     <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
                       <span className="w-5 h-5 rounded-full bg-emerald-500 text-slate-950 text-xs flex items-center justify-center font-bold">5</span>
-                      Seus Dados de Contato
+                      Seus Dados & Resumo do Pedido
                     </h3>
                     <button type="button" onClick={() => setStep(4)} className="text-xs text-emerald-400 hover:underline">
                       Alterar horário
                     </button>
                   </div>
 
-                  {/* Resumo da Escolha */}
-                  <div className="bg-[#0B1120] p-4 rounded-2xl border border-slate-800 text-xs space-y-1.5 text-slate-300">
-                    <p><span className="text-slate-500">Serviço:</span> <strong className="text-white">{selectedService?.name}</strong> (R$ {selectedService?.price.toFixed(2)})</p>
+                  {/* Resumo dos Serviços Escolhidos */}
+                  <div className="bg-[#0B1120] p-4 rounded-2xl border border-slate-800 text-xs space-y-2.5 text-slate-300">
                     <p><span className="text-slate-500">Profissional:</span> <strong className="text-white">{selectedBarber?.full_name}</strong></p>
                     <p><span className="text-slate-500">Data e Horário:</span> <strong className="text-emerald-400 font-mono">{selectedTime}</strong> no dia {new Date(selectedDate + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}</p>
+
+                    <div className="border-t border-slate-800/80 pt-2 space-y-1">
+                      <span className="text-slate-400 font-semibold block">Serviços Inclusos ({selectedServices.length}):</span>
+                      {selectedServices.map(s => (
+                        <div key={s.id} className="flex justify-between text-xs py-0.5">
+                          <span className="text-white">• {s.name} ({s.duration_minutes} min)</span>
+                          <span className="text-emerald-400 font-mono font-bold">R$ {s.price.toFixed(2)}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="flex justify-between border-t border-slate-800/80 pt-2 font-bold">
+                      <span className="text-slate-300">Total ({totalDuration} min):</span>
+                      <span className="text-emerald-400 font-mono text-sm">R$ {totalPrice.toFixed(2)}</span>
+                    </div>
                   </div>
 
                   <div>
@@ -485,7 +622,7 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
                     className="w-full py-4 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-2xl transition-all shadow-lg shadow-emerald-500/20 text-sm mt-2 flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <MessageSquare className="w-4 h-4 fill-slate-950" />
-                    Confirmar Agendamento
+                    Confirmar Agendamento (R$ {totalPrice.toFixed(2)})
                   </button>
                 </form>
               )}

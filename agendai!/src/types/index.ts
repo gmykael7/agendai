@@ -19,13 +19,23 @@ export interface Barber {
   active?: boolean;
 }
 
+export interface AppointmentServiceItem {
+  id: string;
+  name: string;
+  price: number;
+  duration_minutes: number;
+  category?: string;
+}
+
 export interface Appointment {
   id: string;
   org_id?: string;
   client_name: string;
   client_phone: string;
-  service_id: string;
+  service_id?: string;
   service_name: string;
+  services?: AppointmentServiceItem[];
+  duration_minutes?: number;
   barber_id: string;
   barber_name: string;
   start_time: string;

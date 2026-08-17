@@ -32,7 +32,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
   const [modalTime, setModalTime] = useState('10:00');
   const [clientName, setClientName] = useState('');
   const [clientPhone, setClientPhone] = useState('');
-  const [serviceId, setServiceId] = useState(services[0]?.id || '');
+  const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
   const [barberId, setBarberId] = useState(barbers[0]?.id || '');
 
   const slots = useMemo(() => {
@@ -75,6 +75,25 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
   const completedDayAppointments = dayAppointments.filter(a => a.status === 'completed');
   const dayRevenue = activeDayAppointments.reduce((acc, curr) => acc + curr.price, 0);
 
+  // Totais dos serviços selecionados no modal de criação
+  const modalSelectedServices = useMemo(() => {
+    return services.filter(s => selectedServiceIds.includes(s.id));
+  }, [services, selectedServiceIds]);
+
+  const modalTotalPrice = useMemo(() => {
+    return modalSelectedServices.reduce((sum, s) => sum + s.price, 0);
+  }, [modalSelectedServices]);
+
+  const modalTotalDuration = useMemo(() => {
+    return modalSelectedServices.reduce((sum, s) => sum + (s.duration_minutes || 30), 0);
+  }, [modalSelectedServices]);
+
+  const toggleServiceSelection = (id: string) => {
+    setSelectedServiceIds(prev => 
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
   const handleFinishAppointment = (e: React.FormEvent) => {
     e.preventDefault();
     if (!completingApp) return;
@@ -87,29 +106,40 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
 
   const handleCreateAppointment = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!clientName.trim()) return;
+    if (!clientName.trim() || selectedServiceIds.length === 0) return;
 
-    const srv = services.find(s => s.id === serviceId) || services[0];
     const brb = barbers.find(b => b.id === barberId) || barbers[0];
-    if (!srv || !brb) return;
+    if (!brb) return;
+
+    const joinedNames = modalSelectedServices.map(s => s.name).join(' + ');
 
     const created: Appointment = {
       id: 'app-' + Date.now(),
       client_name: clientName.trim(),
       client_phone: clientPhone.trim() || 'Não informado',
-      service_id: srv.id,
-      service_name: srv.name,
+      service_id: modalSelectedServices[0]?.id || '',
+      service_name: joinedNames,
+      services: modalSelectedServices.map(s => ({
+        id: s.id,
+        name: s.name,
+        price: s.price,
+        duration_minutes: s.duration_minutes || 30,
+        category: s.category,
+      })),
+      duration_minutes: modalTotalDuration,
       barber_id: brb.id,
       barber_name: brb.full_name,
       start_time: modalTime,
-      price: srv.price,
+      price: modalTotalPrice,
       status: 'scheduled',
       date: selectedDate,
+      created_at: new Date().toISOString(),
     };
 
     setAppointments(prev => [created, ...prev]);
     setClientName('');
     setClientPhone('');
+    setSelectedServiceIds([]);
     setShowAddModal(false);
   };
 
@@ -178,7 +208,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
 
           <button
             onClick={() => {
-              setServiceId(services[0]?.id || '');
+              setSelectedServiceIds(services[0] ? [services[0].id] : []);
               setBarberId(barbers[0]?.id || '');
               setModalTime('14:00');
               setShowAddModal(true);
@@ -246,28 +276,42 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                     <div className="space-y-2 flex-1">
                       {matchingAppointments.map(app => (
                         <div key={app.id} className="flex flex-wrap items-center justify-between gap-2">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="font-bold text-white text-sm">{app.client_name}</span>
-                            <span className="text-xs text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-lg border border-emerald-500/20 font-medium">
-                              {app.service_name}
-                            </span>
-                            <span className="text-xs text-slate-400">
-                              • Barbeiro: <strong className="text-slate-200">{app.barber_name}</strong>
-                            </span>
-                            <span className="text-xs text-emerald-400 font-mono font-bold">
-                              (R$ {app.price.toFixed(2)})
-                            </span>
-                            {app.client_phone && (
-                              <a
-                                href={getWhatsAppDirect(app.client_phone, app.client_name, app.start_time)}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 text-[11px] text-emerald-400 hover:underline bg-emerald-500/10 px-2 py-0.5 rounded-md"
-                              >
-                                <MessageSquare className="w-3 h-3" />
-                                {app.client_phone}
-                              </a>
-                            )}
+                          <div className="space-y-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-bold text-white text-sm">{app.client_name}</span>
+
+                              {/* LISTA DE SERVIÇOS DO AGENDAMENTO */}
+                              {app.services && app.services.length > 0 ? (
+                                app.services.map((srv, idx) => (
+                                  <span key={idx} className="text-xs text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20 font-medium">
+                                    {srv.name}
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="text-xs text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20 font-medium">
+                                  {app.service_name}
+                                </span>
+                              )}
+
+                              <span className="text-xs text-white font-mono font-bold">
+                                R$ {app.price.toFixed(2)}
+                              </span>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+                              <span>Barbeiro: <strong className="text-slate-200">{app.barber_name}</strong></span>
+                              {app.client_phone && (
+                                <a
+                                  href={getWhatsAppDirect(app.client_phone, app.client_name, app.start_time)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-[11px] text-emerald-400 hover:underline bg-emerald-500/10 px-2 py-0.5 rounded-md"
+                                >
+                                  <MessageSquare className="w-3 h-3" />
+                                  {app.client_phone}
+                                </a>
+                              )}
+                            </div>
                           </div>
 
                           <div className="flex items-center gap-2 shrink-0">
@@ -304,7 +348,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                     <button
                       onClick={() => {
                         setModalTime(time);
-                        setServiceId(services[0]?.id || '');
+                        setSelectedServiceIds(services[0] ? [services[0].id] : []);
                         setBarberId(selectedBarberId !== 'all' ? selectedBarberId : barbers[0]?.id || '');
                         setShowAddModal(true);
                       }}
@@ -341,11 +385,31 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
               </button>
             </div>
 
-            <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-xs space-y-1.5">
+            <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-xs space-y-2">
               <p><span className="text-slate-400">Cliente:</span> <strong className="text-white">{completingApp.client_name}</strong></p>
-              <p><span className="text-slate-400">Serviço:</span> <strong className="text-white">{completingApp.service_name}</strong></p>
               <p><span className="text-slate-400">Profissional:</span> <strong className="text-white">{completingApp.barber_name}</strong></p>
-              <p className="text-base font-bold text-emerald-400 font-mono pt-1">Total: R$ {completingApp.price.toFixed(2)}</p>
+              
+              <div className="border-t border-slate-800/80 pt-1.5">
+                <span className="text-slate-400 block mb-1">Serviços:</span>
+                {completingApp.services && completingApp.services.length > 0 ? (
+                  completingApp.services.map((s, idx) => (
+                    <div key={idx} className="flex justify-between text-slate-300 py-0.5">
+                      <span>• {s.name}</span>
+                      <span className="font-mono">R$ {s.price.toFixed(2)}</span>
+                    </div>
+                  ))
+                ) : (
+                  <div className="flex justify-between text-slate-300">
+                    <span>• {completingApp.service_name}</span>
+                    <span className="font-mono">R$ {completingApp.price.toFixed(2)}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-between border-t border-slate-800/80 pt-2 font-bold">
+                <span className="text-slate-300">Total a Receber:</span>
+                <span className="text-base font-bold text-emerald-400 font-mono">R$ {completingApp.price.toFixed(2)}</span>
+              </div>
             </div>
 
             <form onSubmit={handleFinishAppointment} className="space-y-4">
@@ -391,10 +455,10 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
         </div>
       )}
 
-      {/* MODAL NOVO AGENDAMENTO */}
+      {/* MODAL NOVO AGENDAMENTO (MÚLTIPLOS SERVIÇOS) */}
       {showAddModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl animate-fadeIn">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl animate-fadeIn max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b border-slate-800 pb-3">
               <h3 className="text-lg font-bold text-white flex items-center gap-2">
                 <Plus className="w-5 h-5 text-emerald-400" />
@@ -429,44 +493,75 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                 />
               </div>
 
+              {/* SELEÇÃO DE MÚLTIPLOS SERVIÇOS */}
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Serviço *</label>
-                <select
-                  value={serviceId}
-                  onChange={(e) => setServiceId(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none"
-                >
-                  {services.map((s) => (
-                    <option key={s.id} value={s.id}>{s.name} - R$ {s.price.toFixed(2)}</option>
-                  ))}
-                </select>
+                <div className="flex justify-between items-center mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-300">
+                    Selecione os Serviços * ({selectedServiceIds.length} selecionado(s))
+                  </label>
+                  {modalTotalPrice > 0 && (
+                    <span className="text-xs text-emerald-400 font-bold font-mono">
+                      Total: R$ {modalTotalPrice.toFixed(2)} ({modalTotalDuration} min)
+                    </span>
+                  )}
+                </div>
+
+                <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                  {services.map((s) => {
+                    const isChecked = selectedServiceIds.includes(s.id);
+                    return (
+                      <div
+                        key={s.id}
+                        onClick={() => toggleServiceSelection(s.id)}
+                        className={`p-2.5 rounded-xl border text-xs cursor-pointer flex items-center justify-between transition-all ${
+                          isChecked
+                            ? 'bg-emerald-950/30 border-emerald-500/60 text-white'
+                            : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <div className={`w-4 h-4 rounded flex items-center justify-center border ${
+                            isChecked ? 'bg-emerald-500 border-emerald-400 text-slate-950' : 'border-slate-700 bg-slate-900 text-transparent'
+                          }`}>
+                            <Check className="w-3 h-3 stroke-[3]" />
+                          </div>
+                          <span className="font-semibold">{s.name}</span>
+                          <span className="text-[10px] text-slate-500">({s.duration_minutes} min)</span>
+                        </div>
+                        <span className="font-mono font-bold text-emerald-400">R$ {s.price.toFixed(2)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Barbeiro *</label>
-                <select
-                  value={barberId}
-                  onChange={(e) => setBarberId(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none"
-                >
-                  {barbers.map((b) => (
-                    <option key={b.id} value={b.id}>{b.full_name} ({b.role})</option>
-                  ))}
-                </select>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Barbeiro *</label>
+                  <select
+                    value={barberId}
+                    onChange={(e) => setBarberId(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white focus:border-emerald-500 focus:outline-none"
+                  >
+                    {barbers.map((b) => (
+                      <option key={b.id} value={b.id}>{b.full_name} ({b.role})</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Horário *</label>
+                  <input
+                    type="time"
+                    required
+                    value={modalTime}
+                    onChange={(e) => setModalTime(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white focus:border-emerald-500 focus:outline-none font-mono"
+                  />
+                </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Horário *</label>
-                <input
-                  type="time"
-                  required
-                  value={modalTime}
-                  onChange={(e) => setModalTime(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none font-mono"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
@@ -476,9 +571,10 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs"
+                  disabled={selectedServiceIds.length === 0}
+                  className="px-5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs disabled:opacity-50"
                 >
-                  Salvar Agendamento
+                  Salvar (R$ {modalTotalPrice.toFixed(2)})
                 </button>
               </div>
             </form>
