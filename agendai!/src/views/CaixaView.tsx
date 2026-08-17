@@ -4,6 +4,7 @@ import {
   CreditCard, QrCode, Banknote, Users, Plus, Percent
 } from 'lucide-react';
 import { Appointment, Barber } from '../types';
+import { BarberAvatar } from '../components/common/BarberAvatar';
 
 interface CaixaViewProps {
   appointments: Appointment[];
@@ -148,10 +149,10 @@ export const CaixaView: React.FC<CaixaViewProps> = ({
             return (
               <div key={b.id} className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
-                  <img
-                    src={b.avatar_url || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=250'}
-                    alt={b.full_name}
-                    className="w-10 h-10 rounded-xl object-cover border border-slate-700"
+                  <BarberAvatar
+                    name={b.full_name}
+                    avatarUrl={b.avatar_url}
+                    size="md"
                   />
                   <div>
                     <h4 className="font-bold text-white text-sm">{b.full_name}</h4>

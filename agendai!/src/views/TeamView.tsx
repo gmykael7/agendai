@@ -4,6 +4,7 @@ import {
   UserCheck, AlertCircle, Percent, Sparkles, X, Check
 } from 'lucide-react';
 import { Barber, Appointment } from '../types';
+import { BarberAvatar } from '../components/common/BarberAvatar';
 
 interface TeamViewProps {
   barbers: Barber[];
@@ -61,14 +62,14 @@ export const TeamView: React.FC<TeamViewProps> = ({
         avatar_url: avatarUrl.trim() || undefined,
       } : b));
     } else {
-      // Criar novo barbeiro
+      // Criar novo barbeiro (sem foto humana por padrão)
       const newBarber: Barber = {
         id: 'b-' + Date.now(),
         full_name: fullName.trim(),
         role: role.trim() || 'Barbeiro',
         commission_rate: commissionRate,
         phone: phone.trim(),
-        avatar_url: avatarUrl.trim() || `https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=250`,
+        avatar_url: avatarUrl.trim() || undefined,
         active: true,
       };
       setBarbers(prev => [...prev, newBarber]);
@@ -102,7 +103,7 @@ export const TeamView: React.FC<TeamViewProps> = ({
         </div>
         <button
           onClick={openAddModal}
-          className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-sm flex items-center justify-center gap-2 transition-all shadow-lg shadow-amber-500/10 shrink-0"
+          className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-sm flex items-center justify-center gap-2 transition-all shadow-lg shadow-amber-500/10 shrink-0 active:scale-95"
         >
           <Plus className="w-4 h-4" />
           Adicionar Barbeiro
@@ -142,13 +143,13 @@ export const TeamView: React.FC<TeamViewProps> = ({
                 key={barber.id} 
                 className="bg-slate-900/80 p-6 rounded-2xl border border-slate-800 space-y-5 hover:border-slate-700 transition-all"
               >
-                {/* TOPO DO CARD: FOTO, NOME, AÇÕES */}
+                {/* TOPO DO CARD: FOTO / ÍCONE DE PERFIL PADRÃO, NOME, AÇÕES */}
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-3.5">
-                    <img 
-                      src={barber.avatar_url || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=250'} 
-                      alt={barber.full_name} 
-                      className="w-14 h-14 rounded-2xl object-cover border border-slate-700 shadow-md"
+                    <BarberAvatar
+                      name={barber.full_name}
+                      avatarUrl={barber.avatar_url}
+                      size="lg"
                     />
                     <div>
                       <h4 className="font-bold text-white text-lg leading-tight">{barber.full_name}</h4>
@@ -188,15 +189,15 @@ export const TeamView: React.FC<TeamViewProps> = ({
                     </span>
                   </div>
                   <input
-                    type="range"
-                    min="10"
-                    max="90"
-                    step="5"
+                    type=\"range\"
+                    min=\"10\"
+                    max=\"90\"
+                    step=\"5\"
                     value={barber.commission_rate}
                     onChange={(e) => updateCommissionRate(barber.id, parseInt(e.target.value, 10))}
-                    className="w-full accent-amber-500 bg-slate-800 rounded-lg h-2 cursor-pointer"
+                    className=\"w-full accent-amber-500 bg-slate-800 rounded-lg h-2 cursor-pointer\"
                   />
-                  <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+                  <div className=\"flex justify-between text-[10px] text-slate-500 font-mono\">
                     <span>10%</span>
                     <span>50%</span>
                     <span>90%</span>
@@ -204,20 +205,20 @@ export const TeamView: React.FC<TeamViewProps> = ({
                 </div>
 
                 {/* MÉTRICAS DE PRODUÇÃO E LIQUIDAÇÃO */}
-                <div className="grid grid-cols-3 gap-2.5 pt-1">
-                  <div className="bg-slate-950/60 p-3 rounded-xl border border-slate-800">
-                    <p className="text-[11px] text-slate-400">Atendimentos</p>
-                    <p className="text-sm font-bold text-white mt-0.5">
-                      {concluidos.length} <span className="text-[10px] text-slate-500 font-normal">({agendamentosPendentes} pend.)</span>
+                <div className=\"grid grid-cols-3 gap-2.5 pt-1\">
+                  <div className=\"bg-slate-950/60 p-3 rounded-xl border border-slate-800\">
+                    <p className=\"text-[11px] text-slate-400\">Atendimentos</p>
+                    <p className=\"text-sm font-bold text-white mt-0.5\">
+                      {concluidos.length} <span className=\"text-[10px] text-slate-500 font-normal\">({agendamentosPendentes} pend.)</span>
                     </p>
                   </div>
-                  <div className="bg-slate-950/60 p-3 rounded-xl border border-slate-800">
-                    <p className="text-[11px] text-slate-400">Total Produzido</p>
-                    <p className="text-sm font-bold text-white mt-0.5 font-mono">R$ {totalBruto.toFixed(2)}</p>
+                  <div className=\"bg-slate-950/60 p-3 rounded-xl border border-slate-800\">
+                    <p className=\"text-[11px] text-slate-400\">Total Produzido</p>
+                    <p className=\"text-sm font-bold text-white mt-0.5 font-mono\">R$ {totalBruto.toFixed(2)}</p>
                   </div>
-                  <div className="bg-emerald-950/20 p-3 rounded-xl border border-emerald-500/20">
-                    <p className="text-[11px] text-emerald-400 font-medium">Comissão Líquida</p>
-                    <p className="text-sm font-bold text-emerald-400 mt-0.5 font-mono">R$ {valorComissao.toFixed(2)}</p>
+                  <div className=\"bg-emerald-950/20 p-3 rounded-xl border border-emerald-500/20\">
+                    <p className=\"text-[11px] text-emerald-400 font-medium\">Comissão Líquida</p>
+                    <p className=\"text-sm font-bold text-emerald-400 mt-0.5 font-mono\">R$ {valorComissao.toFixed(2)}</p>
                   </div>
                 </div>
               </div>
@@ -228,102 +229,102 @@ export const TeamView: React.FC<TeamViewProps> = ({
 
       {/* MODAL ADICIONAR / EDITAR BARBEIRO */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl animate-fadeIn">
-            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <Users className="w-5 h-5 text-amber-500" />
+        <div className=\"fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4\">
+          <div className=\"bg-slate-900 border border-slate-800 rounded-t-3xl sm:rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl animate-fadeIn max-h-[88vh] overflow-y-auto\">
+            <div className=\"flex justify-between items-center border-b border-slate-800 pb-3\">
+              <h3 className=\"text-lg font-bold text-white flex items-center gap-2\">
+                <Users className=\"w-5 h-5 text-amber-500\" />
                 {editingBarber ? 'Editar Barbeiro' : 'Adicionar Novo Barbeiro'}
               </h3>
               <button 
                 onClick={() => setShowModal(false)}
-                className="text-slate-400 hover:text-white p-1 rounded-lg"
+                className=\"text-slate-400 hover:text-white p-1 rounded-lg\"
               >
-                <X className="w-5 h-5" />
+                <X className=\"w-5 h-5\" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveBarber} className="space-y-4">
+            <form onSubmit={handleSaveBarber} className=\"space-y-4\">
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                <label className=\"block text-xs font-semibold text-slate-300 mb-1\">
                   Nome Completo *
                 </label>
                 <input
-                  type="text"
+                  type=\"text\"
                   required
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
-                  placeholder="Ex: Lucas Silva"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:border-amber-500 focus:outline-none"
+                  placeholder=\"Ex: Lucas Silva\"
+                  className=\"w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:border-amber-500 focus:outline-none\"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className=\"grid grid-cols-2 gap-3\">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  <label className=\"block text-xs font-semibold text-slate-300 mb-1\">
                     Especialidade / Cargo
                   </label>
                   <input
-                    type="text"
+                    type=\"text\"
                     value={role}
                     onChange={(e) => setRole(e.target.value)}
-                    placeholder="Ex: Barbeiro Sênior"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:border-amber-500 focus:outline-none"
+                    placeholder=\"Ex: Barbeiro Sênior\"
+                    className=\"w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:border-amber-500 focus:outline-none\"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  <label className=\"block text-xs font-semibold text-slate-300 mb-1\">
                     Comissão Inicial (%)
                   </label>
                   <input
-                    type="number"
-                    min="0"
-                    max="100"
+                    type=\"number\"
+                    min=\"0\"
+                    max=\"100\"
                     value={commissionRate}
                     onChange={(e) => setCommissionRate(parseInt(e.target.value, 10) || 0)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:border-amber-500 focus:outline-none font-mono"
+                    className=\"w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:border-amber-500 focus:outline-none font-mono\"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                <label className=\"block text-xs font-semibold text-slate-300 mb-1\">
                   WhatsApp do Barbeiro
                 </label>
                 <input
-                  type="tel"
+                  type=\"tel\"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
-                  placeholder="(84) 99999-8888"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:border-amber-500 focus:outline-none"
+                  placeholder=\"(84) 99999-8888\"
+                  className=\"w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:border-amber-500 focus:outline-none\"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  URL da Foto / Avatar (Opcional)
+                <label className=\"block text-xs font-semibold text-slate-300 mb-1\">
+                  URL da Foto / Avatar (Opcional - por padrão usa ícone de perfil)
                 </label>
                 <input
-                  type="url"
+                  type=\"url\"
                   value={avatarUrl}
                   onChange={(e) => setAvatarUrl(e.target.value)}
-                  placeholder="https://exemplo.com/foto.jpg"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white focus:border-amber-500 focus:outline-none font-mono"
+                  placeholder=\"Opcional: https://...\"
+                  className=\"w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white focus:border-amber-500 focus:outline-none font-mono\"
                 />
               </div>
 
-              <div className="flex justify-end gap-2.5 pt-2">
+              <div className=\"flex justify-end gap-2.5 pt-2\">
                 <button
-                  type="button"
+                  type=\"button\"
                   onClick={() => setShowModal(false)}
-                  className="px-4 py-2 bg-slate-800 text-slate-300 rounded-xl text-xs font-medium hover:bg-slate-700 transition-colors"
+                  className=\"px-4 py-2 bg-slate-800 text-slate-300 rounded-xl text-xs font-medium hover:bg-slate-700 transition-colors\"
                 >
                   Cancelar
                 </button>
                 <button
-                  type="submit"
-                  className="px-5 py-2 bg-amber-500 text-slate-950 font-bold rounded-xl text-xs hover:bg-amber-400 transition-colors"
+                  type=\"submit\"
+                  className=\"px-5 py-2 bg-amber-500 text-slate-950 font-bold rounded-xl text-xs hover:bg-amber-400 transition-colors\"
                 >
                   {editingBarber ? 'Salvar Alterações' : 'Cadastrar Barbeiro'}
                 </button>

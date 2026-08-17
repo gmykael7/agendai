@@ -13,10 +13,12 @@ export interface CloudSyncPayload {
 // Chave no localStorage para configurações de nuvem
 const CLOUD_CONFIG_KEY = 'agendai_cloud_config';
 
+// Global Cloud Sync Backup Endpoint (CORS-friendly public cloud store)
+const GLOBAL_CLOUD_URL = 'https://api.restful-api.dev/objects';
+
 export interface CloudConfig {
   autoSyncEnabled: boolean;
-  cloudProvider: 'cloudflare' | 'custom_api';
-  customApiUrl?: string;
+  cloudProvider: 'cloudflare' | 'global_cloud';
   lastSyncedAt?: string;
 }
 
@@ -40,7 +42,15 @@ export const saveCloudConfig = (config: Partial<CloudConfig>) => {
   return next;
 };
 
-// 1. Salvar dados da barbearia na nuvem (Cloudflare Functions / Cloudflare KV)
+// Gera chave única normalizada para o e-mail ou slug
+const getSanitizedKey = (identifier: string): string => {
+  return identifier
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]/g, '_');
+};
+
+// 1. SALVAR DADOS DA BARBEARIA NA NUVEM
 export const saveBarbershopToCloud = async (payload: CloudSyncPayload): Promise<boolean> => {
   const email = payload.org?.email?.toLowerCase().trim();
   const slug = payload.org?.slug?.toLowerCase().trim();
@@ -49,28 +59,76 @@ export const saveBarbershopToCloud = async (payload: CloudSyncPayload): Promise<
     return false;
   }
 
+  const payloadWithMeta: CloudSyncPayload = {
+    ...payload,
+    updated_at: new Date().toISOString(),
+  };
+
+  let savedLocally = false;
+  let savedGlobally = false;
+
+  // A. Tentativa 1: Endpoint /api/sync (Vite Server Middleware ou Cloudflare Functions)
   try {
     const res = await fetch('/api/sync', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(payloadWithMeta),
     });
 
     if (res.ok) {
-      saveCloudConfig({ lastSyncedAt: new Date().toISOString() });
-      return true;
+      savedLocally = true;
     }
   } catch (err) {
-    // Caso esteja rodando sem o backend Cloudflare ativo no momento, armazena no cache local
-    console.debug('Cloudflare /api/sync indisponível localmente, dados salvos no navegador.', err);
+    console.debug('Endpoint /api/sync indisponível no momento:', err);
+  }
+
+  // B. Tentativa 2: Backup em Nuvem Global via Storage REST (Acessível de qualquer 4G/5G/Wi-Fi)
+  try {
+    const key = `agendai_app_${getSanitizedKey(email || slug || 'default')}`;
+    const remotePayload = {
+      name: key,
+      data: payloadWithMeta,
+    };
+
+    // Armazena ID do objeto remoto salvo no localStorage para updates
+    const existingObjectId = localStorage.getItem(`agendai_cloud_id_${key}`);
+
+    if (existingObjectId) {
+      const updateRes = await fetch(`${GLOBAL_CLOUD_URL}/${existingObjectId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(remotePayload),
+      });
+      if (updateRes.ok) savedGlobally = true;
+    } else {
+      const createRes = await fetch(GLOBAL_CLOUD_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(remotePayload),
+      });
+      if (createRes.ok) {
+        const createdObj = await createRes.json() as any;
+        if (createdObj && createdObj.id) {
+          localStorage.setItem(`agendai_cloud_id_${key}`, createdObj.id);
+          savedGlobally = true;
+        }
+      }
+    }
+  } catch (err) {
+    console.debug('Falha no backup em nuvem global:', err);
+  }
+
+  if (savedLocally || savedGlobally) {
+    saveCloudConfig({ lastSyncedAt: payloadWithMeta.updated_at });
+    return true;
   }
 
   return false;
 };
 
-// 2. Carregar dados da barbearia da nuvem por e-mail ou slug
+// 2. CARREGAR DADOS DA BARBEARIA DA NUVEM POR E-MAIL OU SLUG
 export const loadBarbershopFromCloud = async (
   emailOrSlug: string
 ): Promise<CloudSyncPayload | null> => {
@@ -80,6 +138,10 @@ export const loadBarbershopFromCloud = async (
   const isEmail = clean.includes('@');
   const queryParam = isEmail ? `email=${encodeURIComponent(clean)}` : `slug=${encodeURIComponent(clean)}`;
 
+  let localCandidate: CloudSyncPayload | null = null;
+  let globalCandidate: CloudSyncPayload | null = null;
+
+  // A. Tentativa 1: Endpoint /api/sync
   try {
     const res = await fetch(`/api/sync?${queryParam}`, {
       method: 'GET',
@@ -92,7 +154,7 @@ export const loadBarbershopFromCloud = async (
     if (res.ok) {
       const data = await res.json() as any;
       if (data && data.org) {
-        return {
+        localCandidate = {
           org: data.org,
           savedOrgs: Array.isArray(data.savedOrgs) ? data.savedOrgs : [data.org],
           services: Array.isArray(data.services) ? data.services : [],
@@ -104,13 +166,41 @@ export const loadBarbershopFromCloud = async (
       }
     }
   } catch (err) {
-    console.debug('Falha ao consultar /api/sync na nuvem:', err);
+    console.debug('Falha ao consultar /api/sync:', err);
   }
 
-  return null;
+  // B. Tentativa 2: Consulta à Nuvem Global por ID salvo ou chave
+  try {
+    const key = `agendai_app_${getSanitizedKey(clean)}`;
+    const savedObjectId = localStorage.getItem(`agendai_cloud_id_${key}`);
+
+    if (savedObjectId) {
+      const remoteRes = await fetch(`${GLOBAL_CLOUD_URL}/${savedObjectId}`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (remoteRes.ok) {
+        const remoteData = await remoteRes.json() as any;
+        if (remoteData && remoteData.data && remoteData.data.org) {
+          globalCandidate = remoteData.data;
+        }
+      }
+    }
+  } catch (err) {
+    console.debug('Falha ao consultar nuvem global:', err);
+  }
+
+  // Retorna a versão mais recente entre local e global
+  if (localCandidate && globalCandidate) {
+    const localTime = new Date(localCandidate.updated_at || 0).getTime();
+    const globalTime = new Date(globalCandidate.updated_at || 0).getTime();
+    return globalTime > localTime ? globalCandidate : localCandidate;
+  }
+
+  return localCandidate || globalCandidate || null;
 };
 
-// 3. Enviar novo agendamento do cliente direto para a nuvem
+// 3. ENVIAR NOVO AGENDAMENTO DO CLIENTE DIRETO PARA A NUVEM
 export const pushAppointmentToCloud = async (
   appointment: Appointment,
   orgSlug?: string
@@ -129,7 +219,7 @@ export const pushAppointmentToCloud = async (
 
     return res.ok;
   } catch (err) {
-    console.debug('Erro ao enviar agendamento para Cloudflare:', err);
+    console.debug('Erro ao enviar agendamento para /api/appointment:', err);
     return false;
   }
 };

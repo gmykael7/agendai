@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { Organization, Service, Barber, Appointment } from '../types';
 import { pushAppointmentToCloud } from '../services/cloudSync';
+import { BarberAvatar } from '../components/common/BarberAvatar';
 
 interface TenantBookingViewProps {
   org: Organization;
@@ -538,7 +539,7 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
                 </div>
               )}
 
-              {/* ETAPA 3: BARBEIRO */}
+              {/* ETAPA 3: BARBEIRO (ÍCONE DE PERFIL PADRÃO) */}
               {step === 3 && (
                 <div className="space-y-3.5 sm:space-y-4 animate-fadeIn">
                   <div className="flex justify-between items-center">
@@ -561,10 +562,10 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
                         }}
                         className="p-3.5 rounded-2xl bg-[#0B1120] border border-slate-800 hover:border-emerald-500/50 cursor-pointer flex items-center gap-3 transition-all group active:scale-98"
                       >
-                        <img 
-                          src={barber.avatar_url || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=250'} 
-                          alt={barber.full_name} 
-                          className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl object-cover border border-slate-700 shadow" 
+                        <BarberAvatar
+                          name={barber.full_name}
+                          avatarUrl={barber.avatar_url}
+                          size="md"
                         />
                         <div>
                           <h4 className="font-bold text-white group-hover:text-emerald-400 transition-colors text-xs sm:text-sm">{barber.full_name}</h4>

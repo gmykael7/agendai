@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { 
   Building2, Scissors, LogIn, UserPlus, Lock, 
-  Mail, Phone, Sparkles, ArrowRight, ShieldCheck, User, Smartphone, Upload, Check, Loader2, Cloud
+  Mail, Phone, Sparkles, ArrowRight, ShieldCheck, User, Smartphone, Upload, Check, Loader2, Cloud, AlertCircle
 } from 'lucide-react';
 import { Organization } from '../types';
 import { INITIAL_ORG, INITIAL_SERVICES, INITIAL_BARBERS, INITIAL_APPOINTMENTS, INITIAL_CLIENTS } from '../data/mockData';
-import { loadBarbershopFromCloud } from '../services/cloudSync';
+import { loadBarbershopFromCloud, saveBarbershopToCloud } from '../services/cloudSync';
 
 interface AuthViewProps {
   onLogin: (org: Organization) => void;
@@ -67,26 +67,15 @@ export const AuthView: React.FC<AuthViewProps> = ({
     setIsLoadingCloud(true);
 
     const emailTrimmed = loginEmail.trim();
-
-    // 1. Verificar se existe organização salva localmente neste dispositivo
-    const foundLocal = savedOrganizations.find(
-      org => (org.email && org.email.toLowerCase() === emailTrimmed.toLowerCase()) ||
-             (org.phone && org.phone.includes(emailTrimmed)) ||
-             (org.name && org.name.toLowerCase() === emailTrimmed.toLowerCase()) ||
-             (org.slug && org.slug.toLowerCase() === emailTrimmed.toLowerCase())
-    );
-
-    if (foundLocal) {
+    if (!emailTrimmed) {
       setIsLoadingCloud(false);
-      onLogin(foundLocal);
       return;
     }
 
-    // 2. Buscar automaticamente na Nuvem (Cloudflare / Cloud) pelo email ou slug
+    // 1. Buscar na Nuvem (Cloudflare / Nuvem Global)
     try {
       const cloudData = await loadBarbershopFromCloud(emailTrimmed);
       if (cloudData && cloudData.org) {
-        // Salva todos os dados recebidos da nuvem no dispositivo
         localStorage.setItem('agendai_current_org', JSON.stringify(cloudData.org));
         localStorage.setItem('agendai_all_orgs', JSON.stringify(cloudData.savedOrgs));
         localStorage.setItem('agendai_services', JSON.stringify(cloudData.services));
@@ -104,37 +93,69 @@ export const AuthView: React.FC<AuthViewProps> = ({
       console.warn('Erro ao consultar nuvem:', err);
     }
 
+    // 2. Verificar se existe organização salva localmente neste dispositivo
+    const foundLocal = savedOrganizations.find(
+      org => (org.email && org.email.toLowerCase() === emailTrimmed.toLowerCase()) ||
+             (org.phone && org.phone.includes(emailTrimmed)) ||
+             (org.name && org.name.toLowerCase() === emailTrimmed.toLowerCase()) ||
+             (org.slug && org.slug.toLowerCase() === emailTrimmed.toLowerCase())
+    );
+
+    if (foundLocal) {
+      setIsLoadingCloud(false);
+      onLogin(foundLocal);
+      return;
+    }
+
     setIsLoadingCloud(false);
 
-    // 3. Se houver alguma conta salva no dispositivo, entra
-    if (savedOrganizations.length > 0) {
-      onLogin(savedOrganizations[0]);
-    } else {
-      // 4. Criação de acesso direto
-      onLogin({
-        ...INITIAL_ORG,
-        email: emailTrimmed || 'admin@barbearia.com',
-      });
-    }
+    // 3. Se não encontrou, avisa o usuário com precisão
+    setLoginError(
+      `Nenhuma barbearia encontrada com o e-mail "${emailTrimmed}". Verifique a digitação ou cadastre uma nova conta na aba "Cadastrar Novo".`
+    );
   };
 
-  const handleRegisterSubmit = (e: React.FormEvent) => {
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!salonName.trim()) return;
+    if (!salonName.trim() || !email.trim()) return;
+
+    setIsLoadingCloud(true);
 
     const newOrg: Organization = {
       id: 'org-' + Date.now(),
       name: salonName.trim(),
       owner_name: ownerName.trim() || 'Administrador',
-      email: email.trim() || undefined,
+      email: email.trim().toLowerCase(),
       password: password || undefined,
-      slug: slug.trim() || generateSlug(salonName),
+      slug: slug.trim().toLowerCase() || generateSlug(salonName),
       phone: phone.trim() || '(84) 99999-0000',
       primary_color: '#10b981',
       open_hour: '08:00',
       close_hour: '20:00',
     };
 
+    const initialServicesWithOrg = INITIAL_SERVICES.map(s => ({ ...s, org_id: newOrg.id }));
+    const initialBarbersWithOrg = INITIAL_BARBERS.map(b => ({ ...b, org_id: newOrg.id }));
+
+    // Salva imediatamente na nuvem com chave de e-mail
+    await saveBarbershopToCloud({
+      org: newOrg,
+      savedOrgs: [newOrg],
+      services: initialServicesWithOrg,
+      barbers: initialBarbersWithOrg,
+      appointments: [],
+      clients: [],
+    });
+
+    localStorage.setItem('agendai_current_org', JSON.stringify(newOrg));
+    localStorage.setItem('agendai_all_orgs', JSON.stringify([newOrg]));
+    localStorage.setItem('agendai_services', JSON.stringify(initialServicesWithOrg));
+    localStorage.setItem('agendai_barbers', JSON.stringify(initialBarbersWithOrg));
+    localStorage.setItem('agendai_appointments', JSON.stringify([]));
+    localStorage.setItem('agendai_clients', JSON.stringify([]));
+    localStorage.setItem('agendai_session_active', 'true');
+
+    setIsLoadingCloud(false);
     onRegister(newOrg);
   };
 
@@ -170,7 +191,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
           </div>
           <h2 className="text-2xl font-bold text-white tracking-tight">AgendAI</h2>
           <p className="text-xs text-slate-400">
-            Gestão & Agendamento com Nuvem Cloudflare
+            Gestão & Agendamento com Nuvem Sincronizada
           </p>
         </div>
 
@@ -178,7 +199,10 @@ export const AuthView: React.FC<AuthViewProps> = ({
         <div className="flex bg-[#0B1120] p-1 rounded-2xl border border-slate-800">
           <button
             type="button"
-            onClick={() => setMode('login')}
+            onClick={() => {
+              setMode('login');
+              setLoginError('');
+            }}
             className={`w-1/2 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
               mode === 'login'
                 ? 'bg-emerald-500 text-slate-950 shadow-md'
@@ -191,7 +215,10 @@ export const AuthView: React.FC<AuthViewProps> = ({
 
           <button
             type="button"
-            onClick={() => setMode('register')}
+            onClick={() => {
+              setMode('register');
+              setLoginError('');
+            }}
             className={`w-1/2 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
               mode === 'register'
                 ? 'bg-emerald-500 text-slate-950 shadow-md'
@@ -208,7 +235,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
           <form onSubmit={handleLoginSubmit} className="space-y-4 animate-fadeIn">
             {savedOrganizations.length > 0 && (
               <div className="bg-[#0B1120] p-3 rounded-2xl border border-slate-800 space-y-2">
-                <p className="text-[11px] font-semibold text-slate-400">Contas salvas neste dispositivo:</p>
+                <p className="text-[11px] font-semibold text-slate-400">Barbearia salva neste navegador:</p>
                 <div className="space-y-1.5">
                   {savedOrganizations.map((o) => (
                     <div
@@ -220,7 +247,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                         <Building2 className="w-4 h-4 text-emerald-400 shrink-0" />
                         <div className="truncate">
                           <p className="text-xs font-bold text-white group-hover:text-emerald-400 transition-colors truncate">{o.name}</p>
-                          <p className="text-[10px] text-slate-400 font-mono truncate">agend.ai/{o.slug}</p>
+                          <p className="text-[10px] text-slate-400 font-mono truncate">{o.email || o.slug}</p>
                         </div>
                       </div>
                       <span className="text-[10px] text-emerald-400 font-semibold shrink-0">Entrar →</span>
@@ -232,24 +259,24 @@ export const AuthView: React.FC<AuthViewProps> = ({
 
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1.5">
-                <Mail className="w-3.5 h-3.5 text-emerald-400" /> E-mail de Login
+                <Mail className="w-3.5 h-3.5 text-emerald-400" /> Seu E-mail de Cadastro
               </label>
               <input
-                type="text"
+                type="email"
                 required
                 value={loginEmail}
                 onChange={(e) => setLoginEmail(e.target.value)}
-                placeholder="seu-email@exemplo.com ou barbearia-slug"
+                placeholder="seu-email@exemplo.com"
                 className="w-full bg-[#0B1120] border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:border-emerald-500 focus:outline-none"
               />
-              <p className="text-[10px] text-slate-500 mt-1">
-                Ao entrar, seus dados serão buscados automaticamente na nuvem Cloudflare.
+              <p className="text-[10px] text-slate-400 mt-1">
+                ☁️ Digite o e-mail cadastrado para carregar automaticamente seus barbeiros, serviços e dados.
               </p>
             </div>
 
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1.5">
-                <Lock className="w-3.5 h-3.5 text-emerald-400" /> Senha de Acesso
+                <Lock className="w-3.5 h-3.5 text-emerald-400" /> Senha
               </label>
               <input
                 type="password"
@@ -262,9 +289,10 @@ export const AuthView: React.FC<AuthViewProps> = ({
             </div>
 
             {loginError && (
-              <p className="text-xs text-rose-400 bg-rose-950/20 p-2.5 rounded-xl border border-rose-800/40 text-center">
-                {loginError}
-              </p>
+              <div className="p-3 bg-rose-950/40 border border-rose-800/60 rounded-xl text-rose-300 text-xs flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                <span>{loginError}</span>
+              </div>
             )}
 
             <button
@@ -275,7 +303,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
               {isLoadingCloud ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Buscando na Nuvem...</span>
+                  <span>Sincronizando com a Nuvem...</span>
                 </>
               ) : (
                 <>
@@ -332,14 +360,14 @@ export const AuthView: React.FC<AuthViewProps> = ({
 
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center gap-1.5">
-                <Mail className="w-3.5 h-3.5 text-emerald-400" /> E-mail de Login *
+                <Mail className="w-3.5 h-3.5 text-emerald-400" /> E-mail de Login (Usado para abrir no celular) *
               </label>
               <input
                 type="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@barbearia.com"
+                placeholder="seuemail@exemplo.com"
                 className="w-full bg-[#0B1120] border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none"
               />
             </div>
@@ -360,7 +388,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
 
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Link Exclusivo (Slug)
+                Link Exclusivo para Clientes
               </label>
               <div className="flex items-center bg-[#0B1120] border border-slate-800 rounded-xl px-3 text-xs text-slate-400">
                 <span>agend.ai/</span>
@@ -376,9 +404,17 @@ export const AuthView: React.FC<AuthViewProps> = ({
 
             <button
               type="submit"
-              className="w-full py-3.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-sm transition-all shadow-lg shadow-emerald-500/10 mt-2 active:scale-98"
+              disabled={isLoadingCloud}
+              className="w-full py-3.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-sm transition-all shadow-lg shadow-emerald-500/10 mt-2 active:scale-98 flex items-center justify-center gap-2 disabled:opacity-50"
             >
-              Criar Conta e Salvar na Nuvem
+              {isLoadingCloud ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Salvando na Nuvem...</span>
+                </>
+              ) : (
+                <span>Criar Conta e Salvar na Nuvem</span>
+              )}
             </button>
           </form>
         )}
@@ -391,13 +427,13 @@ export const AuthView: React.FC<AuthViewProps> = ({
             className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-emerald-400 transition-colors"
           >
             <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
-            <span>{showImportSync ? 'Ocultar importação' : 'Colar código de sincronização do computador'}</span>
+            <span>{showImportSync ? 'Ocultar importação manual' : 'Transferir via link/código direto'}</span>
           </button>
 
           {showImportSync && (
             <div className="p-3 bg-[#0B1120] rounded-2xl border border-slate-800 space-y-2 text-left animate-fadeIn">
               <label className="block text-[11px] text-slate-400">
-                Cole o link ou código de sincronização:
+                Cole o link ou código de sincronização gerado no outro dispositivo:
               </label>
               <input
                 type="text"

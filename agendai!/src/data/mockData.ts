@@ -29,7 +29,6 @@ export const INITIAL_BARBERS: Barber[] = [
     role: 'Barbeiro Sênior', 
     commission_rate: 50, 
     phone: '(84) 98888-7777', 
-    avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=250',
     active: true,
   },
   { 
@@ -39,7 +38,6 @@ export const INITIAL_BARBERS: Barber[] = [
     role: 'Especialista em Barba', 
     commission_rate: 45, 
     phone: '(84) 97777-6666', 
-    avatar_url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=250',
     active: true,
   },
 ];

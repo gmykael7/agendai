@@ -30,7 +30,7 @@ import {
   loadBarbershopFromCloud, 
   pushAppointmentToCloud 
 } from './services/cloudSync';
-import { Bell, Calendar, CheckCircle2, Clock, Sparkles, User, X, Smartphone, QrCode, Copy, Check, Share2, ArrowRight, Cloud } from 'lucide-react';
+import { Bell, Calendar, CheckCircle2, Clock, Sparkles, User, X, Smartphone, QrCode, Copy, Check, Share2, ArrowRight, Cloud, RefreshCw } from 'lucide-react';
 
 const STORAGE_KEYS = {
   CURRENT_ORG: 'agendai_current_org',
@@ -122,7 +122,7 @@ export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
     const session = localStorage.getItem(STORAGE_KEYS.AUTH_SESSION);
     if (session === 'false') return false;
-    return true; // Por padrão entra com sessão ativa caso não haja logout explícito
+    return true;
   });
 
   // Catálogo de serviços com fallback
@@ -149,7 +149,7 @@ export default function App() {
     return saved ? JSON.parse(saved) : INITIAL_CLIENTS;
   });
 
-  // Detecção de Rota Pública de Agendamento pelo Cliente (URL Hash ou Query Param)
+  // Detecção de Rota Pública de Agendamento pelo Cliente
   const [isClientRoute, setIsClientRoute] = useState<boolean>(() => {
     const hash = window.location.hash.toLowerCase();
     const search = window.location.search.toLowerCase();
@@ -160,6 +160,8 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [copiedSyncLink, setCopiedSyncLink] = useState(false);
+  const [isManualSyncing, setIsManualSyncing] = useState(false);
+  const [syncStatusMsg, setSyncStatusMsg] = useState('');
 
   // Notificação Toast em tempo real de novos agendamentos
   const [toastNotification, setToastNotification] = useState<{
@@ -235,9 +237,9 @@ export default function App() {
     };
   }, []);
 
-  // 2. SALVAR AUTOMATICAMENTE NA NUVEM CLOUDFLARE QUANDO OS DADOS MUDAREM (DEBOUNCED)
+  // 2. SALVAR AUTOMATICAMENTE NA NUVEM QUANDO OS DADOS MUDAREM (DEBOUNCED)
   useEffect(() => {
-    if (!org || !org.email) return;
+    if (!org || (!org.email && !org.slug)) return;
 
     const timer = setTimeout(() => {
       saveBarbershopToCloud({
@@ -248,12 +250,12 @@ export default function App() {
         appointments,
         clients,
       });
-    }, 1200);
+    }, 1000);
 
     return () => clearTimeout(timer);
   }, [org, savedOrgs, services, barbers, appointments, clients]);
 
-  // 3. CONSULTAR A NUVEM CLOUDFLARE PERIODICAMENTE PARA NOVOS AGENDAMENTOS ONLINE
+  // 3. CONSULTAR A NUVEM PERIODICAMENTE PARA NOVOS AGENDAMENTOS
   useEffect(() => {
     if (!org || !isLoggedIn || isClientRoute) return;
 
@@ -346,7 +348,7 @@ export default function App() {
         };
       }
     } catch (e) {
-      console.warn('BroadcastChannel não suportado ou erro ao inicializar:', e);
+      console.warn('BroadcastChannel não suportado:', e);
     }
 
     // Fallback: Storage Event Listener do navegador
@@ -355,24 +357,16 @@ export default function App() {
       try {
         if (e.key === STORAGE_KEYS.APPOINTMENTS) {
           const parsed = JSON.parse(e.newValue);
-          if (Array.isArray(parsed)) {
-            setAppointments(parsed);
-          }
+          if (Array.isArray(parsed)) setAppointments(parsed);
         } else if (e.key === STORAGE_KEYS.CLIENTS) {
           const parsed = JSON.parse(e.newValue);
-          if (Array.isArray(parsed)) {
-            setClients(parsed);
-          }
+          if (Array.isArray(parsed)) setClients(parsed);
         } else if (e.key === STORAGE_KEYS.SERVICES) {
           const parsed = JSON.parse(e.newValue);
-          if (Array.isArray(parsed)) {
-            setServices(parsed);
-          }
+          if (Array.isArray(parsed)) setServices(parsed);
         } else if (e.key === STORAGE_KEYS.BARBERS) {
           const parsed = JSON.parse(e.newValue);
-          if (Array.isArray(parsed)) {
-            setBarbers(parsed);
-          }
+          if (Array.isArray(parsed)) setBarbers(parsed);
         } else if (e.key === STORAGE_KEYS.CURRENT_ORG) {
           const parsed = JSON.parse(e.newValue);
           if (parsed) setOrg(parsed);
@@ -397,9 +391,7 @@ export default function App() {
 
   // Persistência automática no localStorage
   useEffect(() => {
-    if (org) {
-      localStorage.setItem(STORAGE_KEYS.CURRENT_ORG, JSON.stringify(org));
-    }
+    if (org) localStorage.setItem(STORAGE_KEYS.CURRENT_ORG, JSON.stringify(org));
   }, [org]);
 
   useEffect(() => {
@@ -439,6 +431,30 @@ export default function App() {
   const pendingAppointmentsCount = useMemo(() => {
     return appointments.filter(a => a.status === 'scheduled').length;
   }, [appointments]);
+
+  // Forçar salvamento manual imediato na nuvem
+  const handleForceCloudSync = async () => {
+    if (!org) return;
+    setIsManualSyncing(true);
+    setSyncStatusMsg('');
+
+    const success = await saveBarbershopToCloud({
+      org,
+      savedOrgs,
+      services,
+      barbers,
+      appointments,
+      clients,
+    });
+
+    setIsManualSyncing(false);
+    if (success) {
+      setSyncStatusMsg('✅ Todos os dados foram salvos com sucesso na nuvem!');
+      setTimeout(() => setSyncStatusMsg(''), 4000);
+    } else {
+      setSyncStatusMsg('⚠️ Dados salvos localmente.');
+    }
+  };
 
   // Função central de criação de agendamento (usada pelo cliente e pelo administrador)
   const handleAddAppointment = useCallback((newApp: Omit<Appointment, 'id'>) => {
@@ -521,7 +537,7 @@ export default function App() {
       }
     }
 
-    // 4. Envia imediatamente para a nuvem Cloudflare
+    // 4. Envia imediatamente para a nuvem
     pushAppointmentToCloud(created, org?.slug);
 
     // 5. Se a ação foi feita na mesma aba mas o usuário está no painel, toca o som e mostra toast
@@ -530,26 +546,6 @@ export default function App() {
 
     return created;
   }, [appointments, org?.slug]);
-
-  // Atualizar status do agendamento (concluir, cancelar, alterar)
-  const handleUpdateAppointment = useCallback((updatedApp: Appointment) => {
-    setAppointments(prev => {
-      const next = prev.map(a => a.id === updatedApp.id ? updatedApp : a);
-      localStorage.setItem(STORAGE_KEYS.APPOINTMENTS, JSON.stringify(next));
-      return next;
-    });
-
-    if (broadcastChannelRef.current) {
-      try {
-        broadcastChannelRef.current.postMessage({
-          type: 'UPDATE_APPOINTMENT',
-          payload: updatedApp,
-        });
-      } catch (e) {
-        console.warn(e);
-      }
-    }
-  }, []);
 
   // Ações de Autenticação
   const handleLogin = (targetOrg: Organization) => {
@@ -577,7 +573,7 @@ export default function App() {
       setBarbers(currentBarbers);
     }
 
-    // Salva imediatamente na nuvem Cloudflare
+    // Salva imediatamente na nuvem
     saveBarbershopToCloud({
       org: newOrg,
       savedOrgs: [newOrg],
@@ -775,31 +771,53 @@ export default function App() {
           pendingAppointmentsCount={pendingAppointmentsCount}
         />
 
-        {/* INDICADOR DE NUVEM CLOUDFLARE E BOTÃO DE SINCRONIZAÇÃO */}
+        {/* BARRA DE STATUS DE NUVEM COM BOTÃO DIRETO DE SINCRONIZAÇÃO */}
         <div className="px-3 sm:px-6 md:px-8 max-w-7xl w-full mx-auto pt-3">
-          <div className="bg-gradient-to-r from-slate-900 via-[#121B2E] to-slate-900 border border-slate-800 rounded-2xl p-3 flex items-center justify-between gap-3 text-xs shadow-sm">
+          <div className="bg-gradient-to-r from-slate-900 via-[#121B2E] to-slate-900 border border-slate-800 rounded-2xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-sm">
             <div className="flex items-center gap-2.5 overflow-hidden">
               <div className="w-7 h-7 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
                 <Cloud className="w-4 h-4" />
               </div>
               <div className="truncate">
                 <div className="flex items-center gap-2">
-                  <span className="text-white font-semibold text-xs">Nuvem Cloudflare Conectada</span>
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse hidden sm:inline-block"></span>
+                  <span className="text-white font-semibold text-xs">Nuvem Conectada</span>
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                  <span className="text-[10px] text-emerald-400/90 font-mono">({org?.email || org?.slug})</span>
                 </div>
-                <span className="text-slate-400 text-[11px] truncate block sm:inline">
-                  Dados salvos e acessíveis em qualquer celular ou computador via login com seu e-mail.
+                <span className="text-slate-400 text-[11px] truncate block">
+                  Ao logar com este e-mail em qualquer celular, seus dados carregarão automaticamente.
                 </span>
               </div>
             </div>
-            <button
-              onClick={() => setShowSyncModal(true)}
-              className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1.5 transition-all shrink-0 shadow-sm active:scale-95"
-            >
-              <Smartphone className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Acessar no</span> Celular
-            </button>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handleForceCloudSync}
+                disabled={isManualSyncing}
+                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-50"
+                title="Salvar imediatamente na nuvem"
+              >
+                <RefreshCw className={`w-3 h-3 ${isManualSyncing ? 'animate-spin' : ''}`} />
+                <span>{isManualSyncing ? 'Salvando...' : 'Salvar na Nuvem'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowSyncModal(true)}
+                className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1.5 transition-all active:scale-95"
+              >
+                <Smartphone className="w-3.5 h-3.5" />
+                <span>Abrir no Celular</span>
+              </button>
+            </div>
           </div>
+
+          {syncStatusMsg && (
+            <p className="text-xs text-emerald-400 mt-1.5 font-medium px-2 animate-fadeIn">
+              {syncStatusMsg}
+            </p>
+          )}
         </div>
 
         {/* CONTEÚDO DA ABA ATIVA */}
@@ -879,7 +897,7 @@ export default function App() {
             <div className="flex justify-between items-center border-b border-slate-800 pb-3">
               <h3 className="text-base font-bold text-white flex items-center gap-2">
                 <Cloud className="w-5 h-5 text-emerald-400" />
-                Sincronização em Nuvem (Cloudflare)
+                Sincronização em Nuvem
               </h3>
               <button onClick={() => setShowSyncModal(false)} className="text-slate-400 hover:text-white p-1">
                 <X className="w-5 h-5" />
@@ -888,17 +906,17 @@ export default function App() {
 
             <div className="space-y-3 text-xs text-slate-300">
               <p>
-                Os dados da sua barbearia estão sincronizados com a nuvem Cloudflare.
+                Sua conta está conectada e os dados estão salvos na nuvem sob o e-mail: <strong className="text-emerald-400">{org?.email}</strong>.
               </p>
 
               <div className="bg-[#0B1120] p-3.5 rounded-2xl border border-slate-800 space-y-2">
                 <span className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider block">
-                  Como acessar em outro celular ou PC:
+                  Como abrir em qualquer celular:
                 </span>
                 <ol className="list-decimal list-inside space-y-1.5 text-slate-300">
-                  <li>No celular, acesse o sistema e digite seu e-mail: <strong className="text-white">{org?.email || 'seu e-mail de login'}</strong></li>
-                  <li>O sistema carrega todos os seus dados automaticamente da nuvem!</li>
-                  <li>Ou use o link de acesso direto abaixo:</li>
+                  <li>No celular, acesse a página de login.</li>
+                  <li>Digite exatamente o e-mail: <strong className="text-white">{org?.email}</strong></li>
+                  <li>O app busca e carrega automaticamente todos os seus barbeiros, serviços e agendamentos salvos!</li>
                 </ol>
               </div>
 
@@ -909,7 +927,7 @@ export default function App() {
                   className="w-full py-3.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-2xl text-xs flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-500/20 active:scale-98"
                 >
                   {copiedSyncLink ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                  {copiedSyncLink ? 'Link Copiado! Cole no WhatsApp e abra no celular' : 'Copiar Link de Acesso com Dados'}
+                  {copiedSyncLink ? 'Link Copiado! Cole no WhatsApp e abra no celular' : 'Copiar Link Direto com Todos os Dados'}
                 </button>
               </div>
             </div>
