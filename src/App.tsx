@@ -60,12 +60,31 @@ export default function App() {
     return saved ? JSON.parse(saved) : [];
   });
 
+  // Detecção de Rota Pública de Agendamento pelo Cliente (URL Hash ou Query Param)
+  const [isClientRoute, setIsClientRoute] = useState<boolean>(() => {
+    const hash = window.location.hash.toLowerCase();
+    const search = window.location.search.toLowerCase();
+    return hash.includes('agendar') || search.includes('agendar') || search.includes('booking');
+  });
+
   const [currentTab, setCurrentTab] = useState<TabType>(() => {
     const savedOrg = localStorage.getItem(STORAGE_KEYS.ORG);
     return savedOrg ? 'dashboard' : 'onboarding';
   });
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  // Monitorar alterações na URL para suporte a links diretos enviados aos clientes
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash.toLowerCase();
+      const search = window.location.search.toLowerCase();
+      setIsClientRoute(hash.includes('agendar') || search.includes('agendar') || search.includes('booking'));
+    };
+
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
 
   // Persistência automática no localStorage
   useEffect(() => {
@@ -96,11 +115,11 @@ export default function App() {
     const created: Appointment = {
       ...newApp,
       id: 'app-' + Date.now(),
-      date: new Date().toISOString().split('T')[0],
+      date: newApp.date || new Date().toISOString().split('T')[0],
     };
     setAppointments((prev) => [created, ...prev]);
 
-    // Atualizar ou adicionar à lista de clientes
+    // Atualizar ou adicionar à base de clientes da barbearia
     setClients((prev) => {
       const existing = prev.find(c => c.phone === newApp.client_phone || c.name === newApp.client_name);
       if (existing) {
@@ -153,7 +172,28 @@ export default function App() {
     setCurrentTab('onboarding');
   };
 
-  // Se não houver organização cadastrada ou estiver na aba onboarding
+  // 1. SE O CLIENTE ESTIVER ACESSANDO PELO LINK PÚBLICO (ex: /#/agendar/barbearia)
+  if (isClientRoute || currentTab === 'booking') {
+    return (
+      <div className="min-h-screen bg-[#070B14] text-slate-100 font-sans p-4 sm:p-6 flex items-center justify-center">
+        <TenantBookingView 
+          org={org || INITIAL_ORG}
+          services={services}
+          barbers={barbers}
+          appointments={appointments}
+          onAddAppointment={handleAddAppointment}
+          onBackToAdmin={org ? () => {
+            window.location.hash = '';
+            setIsClientRoute(false);
+            setCurrentTab('dashboard');
+          } : undefined}
+          isStandalone={isClientRoute}
+        />
+      </div>
+    );
+  }
+
+  // 2. SE NÃO HOUVER BARBEARIA CONFIGURADA OU ESTIVER NA ABA ONBOARDING
   if (!org || currentTab === 'onboarding') {
     return (
       <div className="min-h-screen bg-[#070B14] text-slate-100 font-sans p-4 sm:p-8 flex items-center justify-center">
@@ -167,28 +207,25 @@ export default function App() {
     );
   }
 
+  // 3. PAINEL ADMINISTRATIVO INTERNO DA BARBEARIA
   return (
     <div className="min-h-screen bg-[#070B14] text-slate-100 font-sans flex flex-col md:flex-row">
-      {/* SIDEBAR DE NAVEGAÇÃO ADMINISTRATIVA */}
-      {currentTab !== 'booking' && (
-        <Sidebar
-          currentTab={currentTab}
-          setCurrentTab={setCurrentTab}
-          org={org}
-          isSidebarOpen={isSidebarOpen}
-          setIsSidebarOpen={setIsSidebarOpen}
-        />
-      )}
+      {/* SIDEBAR DE NAVEGAÇÃO */}
+      <Sidebar
+        currentTab={currentTab}
+        setCurrentTab={setCurrentTab}
+        org={org}
+        isSidebarOpen={isSidebarOpen}
+        setIsSidebarOpen={setIsSidebarOpen}
+      />
 
-      {/* ÁREA PRINCIPAL DE CONTEÚDO */}
+      {/* ÁREA PRINCIPAL */}
       <main className="flex-1 flex flex-col min-w-0 overflow-y-auto bg-[#070B14]">
         {/* Cabeçalho Mobile */}
-        {currentTab !== 'booking' && (
-          <Header 
-            org={org} 
-            onOpenSidebar={() => setIsSidebarOpen(true)} 
-          />
-        )}
+        <Header 
+          org={org} 
+          onOpenSidebar={() => setIsSidebarOpen(true)} 
+        />
 
         {/* CONTEÚDO DA ABA ATIVA */}
         <div className="flex-1 p-4 sm:p-6 md:p-8 max-w-7xl w-full mx-auto">
@@ -248,17 +285,6 @@ export default function App() {
               appointments={appointments}
               onLoadDemo={handleLoadDemo}
               onResetAll={handleResetAll}
-            />
-          )}
-
-          {currentTab === 'booking' && (
-            <TenantBookingView 
-              org={org}
-              services={services}
-              barbers={barbers}
-              appointments={appointments}
-              onAddAppointment={handleAddAppointment}
-              onBackToAdmin={() => setCurrentTab('dashboard')}
             />
           )}
         </div>
