@@ -30,7 +30,7 @@ import {
   loadBarbershopFromCloud, 
   pushAppointmentToCloud 
 } from './services/cloudSync';
-import { Bell, Calendar, CheckCircle2, Clock, Sparkles, User, X, Smartphone, QrCode, Copy, Check, Share2, ArrowRight, Cloud, RefreshCw } from 'lucide-react';
+import { Bell, Calendar, CheckCircle2, Clock, Sparkles, User, X, Smartphone, QrCode, Copy, Check, Share2, ArrowRight, Cloud, RefreshCw, Loader2, Scissors } from 'lucide-react';
 
 const STORAGE_KEYS = {
   CURRENT_ORG: 'agendai_current_org',
@@ -44,14 +44,12 @@ const STORAGE_KEYS = {
 
 const SYNC_CHANNEL_NAME = 'agendai_realtime_sync';
 
-// Converte horário 'HH:mm' para minutos a partir da meia-noite
 const timeToMinutes = (timeStr: string): number => {
   if (!timeStr) return 0;
   const [h, m] = timeStr.split(':').map(Number);
   return (h || 0) * 60 + (m || 0);
 };
 
-// Função para tocar som suave de notificação de novo agendamento
 const playNotificationSound = () => {
   try {
     const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
@@ -59,7 +57,6 @@ const playNotificationSound = () => {
     const ctx = new AudioCtx();
     const now = ctx.currentTime;
     
-    // Primeiro tom (D5 - 587Hz)
     const osc1 = ctx.createOscillator();
     const gain1 = ctx.createGain();
     osc1.type = 'sine';
@@ -71,7 +68,6 @@ const playNotificationSound = () => {
     osc1.start(now);
     osc1.stop(now + 0.18);
 
-    // Segundo tom harmônico (A5 - 880Hz)
     const osc2 = ctx.createOscillator();
     const gain2 = ctx.createGain();
     osc2.type = 'sine';
@@ -82,12 +78,9 @@ const playNotificationSound = () => {
     gain2.connect(ctx.destination);
     osc2.start(now + 0.14);
     osc2.stop(now + 0.4);
-  } catch {
-    // Caso o navegador bloqueie áudio antes do primeiro clique
-  }
+  } catch {}
 };
 
-// Extrair slug da URL (#/agendar/slug ou ?agendar=slug)
 const getSlugFromUrl = (): string | null => {
   const hash = window.location.hash.toLowerCase();
   const search = window.location.search.toLowerCase();
@@ -106,55 +99,50 @@ const getSlugFromUrl = (): string | null => {
 };
 
 export default function App() {
-  // Lista de organizações cadastradas com fallback inicial
   const [savedOrgs, setSavedOrgs] = useState<Organization[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.ALL_ORGS);
     return saved ? JSON.parse(saved) : [INITIAL_ORG];
   });
 
-  // Organização ativa na sessão com fallback
   const [org, setOrg] = useState<Organization | null>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.CURRENT_ORG);
-    return saved ? JSON.parse(saved) : INITIAL_ORG;
+    return saved ? JSON.parse(saved) : null;
   });
 
-  // Estado da sessão
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
     const session = localStorage.getItem(STORAGE_KEYS.AUTH_SESSION);
-    if (session === 'false') return false;
-    return true;
+    const hasOrg = !!localStorage.getItem(STORAGE_KEYS.CURRENT_ORG);
+    return session === 'true' && hasOrg;
   });
 
-  // Catálogo de serviços com fallback
   const [services, setServices] = useState<Service[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.SERVICES);
     return saved ? JSON.parse(saved) : INITIAL_SERVICES;
   });
 
-  // Lista de barbeiros com fallback
   const [barbers, setBarbers] = useState<Barber[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.BARBERS);
     return saved ? JSON.parse(saved) : INITIAL_BARBERS;
   });
 
-  // Agendamentos com fallback
   const [appointments, setAppointments] = useState<Appointment[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.APPOINTMENTS);
     return saved ? JSON.parse(saved) : INITIAL_APPOINTMENTS;
   });
 
-  // Clientes com fallback
   const [clients, setClients] = useState<Client[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.CLIENTS);
     return saved ? JSON.parse(saved) : INITIAL_CLIENTS;
   });
 
-  // Detecção de Rota Pública de Agendamento pelo Cliente
   const [isClientRoute, setIsClientRoute] = useState<boolean>(() => {
     const hash = window.location.hash.toLowerCase();
     const search = window.location.search.toLowerCase();
     return hash.includes('agendar') || search.includes('agendar') || search.includes('booking');
   });
+
+  const [isLoadingPublicData, setIsLoadingPublicData] = useState<boolean>(false);
+  const [publicOrgData, setPublicOrgData] = useState<Organization | null>(null);
 
   const [currentTab, setCurrentTab] = useState<TabType>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -163,7 +151,6 @@ export default function App() {
   const [isManualSyncing, setIsManualSyncing] = useState(false);
   const [syncStatusMsg, setSyncStatusMsg] = useState('');
 
-  // Notificação Toast em tempo real de novos agendamentos
   const [toastNotification, setToastNotification] = useState<{
     id: string;
     client_name: string;
@@ -175,8 +162,55 @@ export default function App() {
   } | null>(null);
 
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
+  const isInitialLoadDone = useRef(false);
 
-  // 1. SINCRONIZAÇÃO AUTOMÁTICA DE DADOS VIA LINK DE CELULAR (?sync_data=...)
+  // 1. CARREGAMENTO INICIAL: BUSCAR DADOS NA NUVEM AO ABRIR QUALQUER PÁGINA
+  useEffect(() => {
+    const initApp = async () => {
+      const urlSlug = getSlugFromUrl();
+
+      // CASO A: O usuário abriu a página pública do cliente (/#/agendar/:slug)
+      if (urlSlug || isClientRoute) {
+        const targetSlug = urlSlug || org?.slug || 'barbearia-vanguarda';
+        setIsLoadingPublicData(true);
+        try {
+          const cloudData = await loadBarbershopFromCloud(targetSlug);
+          if (cloudData && cloudData.org) {
+            setPublicOrgData(cloudData.org);
+            if (cloudData.services && cloudData.services.length > 0) setServices(cloudData.services);
+            if (cloudData.barbers && cloudData.barbers.length > 0) setBarbers(cloudData.barbers);
+            if (cloudData.appointments) setAppointments(cloudData.appointments);
+          }
+        } catch (e) {
+          console.debug('Erro ao carregar dados públicos da nuvem:', e);
+        } finally {
+          setIsLoadingPublicData(false);
+        }
+      } 
+      // CASO B: O usuário está no painel administrativo e já fez login antes
+      else if (org && (org.email || org.slug)) {
+        try {
+          const cloudData = await loadBarbershopFromCloud(org.email || org.slug);
+          if (cloudData && cloudData.org) {
+            setOrg(cloudData.org);
+            if (cloudData.savedOrgs) setSavedOrgs(cloudData.savedOrgs);
+            if (cloudData.services) setServices(cloudData.services);
+            if (cloudData.barbers) setBarbers(cloudData.barbers);
+            if (cloudData.appointments) setAppointments(cloudData.appointments);
+            if (cloudData.clients) setClients(cloudData.clients);
+          }
+        } catch (e) {
+          console.debug('Erro ao restaurar da nuvem:', e);
+        }
+      }
+
+      isInitialLoadDone.current = true;
+    };
+
+    initApp();
+  }, [isClientRoute]);
+
+  // 2. SINCRONIZAÇÃO AUTOMÁTICA VIA URL (?sync_data=...)
   useEffect(() => {
     try {
       const params = new URLSearchParams(window.location.search);
@@ -210,18 +244,17 @@ export default function App() {
         setIsLoggedIn(true);
         localStorage.setItem(STORAGE_KEYS.AUTH_SESSION, 'true');
 
-        // Limpa parâmetro da URL
         const cleanUrl = window.location.origin + window.location.pathname + window.location.hash;
         window.history.replaceState({}, document.title, cleanUrl);
 
-        alert('✅ Barbearia e dados sincronizados com sucesso no seu celular!');
+        alert('✅ Barbearia e dados sincronizados com sucesso!');
       }
     } catch (err) {
-      console.error('Erro ao sincronizar dados via URL:', err);
+      console.error('Erro ao sincronizar via URL:', err);
     }
   }, []);
 
-  // Monitorar alterações na URL para links diretos
+  // Monitorar alterações na URL
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.toLowerCase();
@@ -237,8 +270,9 @@ export default function App() {
     };
   }, []);
 
-  // 2. SALVAR AUTOMATICAMENTE NA NUVEM QUANDO OS DADOS MUDAREM (DEBOUNCED)
+  // 3. SALVAR AUTOMATICAMENTE NA NUVEM APENAS QUANDO O CARREGAMENTO INICIAL JÁ FOI FEITO
   useEffect(() => {
+    if (!isInitialLoadDone.current) return;
     if (!org || (!org.email && !org.slug)) return;
 
     const timer = setTimeout(() => {
@@ -255,7 +289,7 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [org, savedOrgs, services, barbers, appointments, clients]);
 
-  // 3. CONSULTAR A NUVEM PERIODICAMENTE PARA NOVOS AGENDAMENTOS
+  // 4. CONSULTAR A NUVEM PERIODICAMENTE PARA NOVOS AGENDAMENTOS ONLINE
   useEffect(() => {
     if (!org || !isLoggedIn || isClientRoute) return;
 
@@ -274,12 +308,10 @@ export default function App() {
             return prev;
           });
         }
-      } catch (e) {
-        // Silencioso
-      }
+      } catch (e) {}
     };
 
-    const interval = setInterval(syncCloudData, 6000);
+    const interval = setInterval(syncCloudData, 5000);
     window.addEventListener('focus', syncCloudData);
 
     return () => {
@@ -288,7 +320,7 @@ export default function App() {
     };
   }, [org, isLoggedIn, isClientRoute]);
 
-  // SINCRONIZAÇÃO EM TEMPO REAL ENTRE ABAS/JANELAS (BroadcastChannel e Storage Event)
+  // Sincronização entre abas com BroadcastChannel e storage event
   useEffect(() => {
     try {
       if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
@@ -305,7 +337,6 @@ export default function App() {
               return [payload, ...prev];
             });
 
-            // Atualiza estatísticas do cliente
             setClients(prev => {
               const existing = prev.find(c => c.phone === payload.client_phone || c.name === payload.client_name);
               if (existing) {
@@ -329,7 +360,6 @@ export default function App() {
               }
             });
 
-            // Dispara notificação e som no painel da barbearia
             setToastNotification(payload);
             playNotificationSound();
           } else if (type === 'UPDATE_APPOINTMENT' && payload) {
@@ -347,11 +377,8 @@ export default function App() {
           }
         };
       }
-    } catch (e) {
-      console.warn('BroadcastChannel não suportado:', e);
-    }
+    } catch (e) {}
 
-    // Fallback: Storage Event Listener do navegador
     const handleStorageChange = (e: StorageEvent) => {
       if (!e.newValue) return;
       try {
@@ -374,9 +401,7 @@ export default function App() {
           const parsed = JSON.parse(e.newValue);
           if (Array.isArray(parsed)) setSavedOrgs(parsed);
         }
-      } catch (err) {
-        console.error('Erro ao sincronizar via storage event:', err);
-      }
+      } catch (err) {}
     };
 
     window.addEventListener('storage', handleStorageChange);
@@ -389,7 +414,7 @@ export default function App() {
     };
   }, []);
 
-  // Persistência automática no localStorage
+  // Persistência local
   useEffect(() => {
     if (org) localStorage.setItem(STORAGE_KEYS.CURRENT_ORG, JSON.stringify(org));
   }, [org]);
@@ -418,7 +443,6 @@ export default function App() {
     localStorage.setItem(STORAGE_KEYS.CLIENTS, JSON.stringify(clients));
   }, [clients]);
 
-  // Fechar notificação toast automaticamente após 8 segundos
   useEffect(() => {
     if (!toastNotification) return;
     const timer = setTimeout(() => {
@@ -427,12 +451,10 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [toastNotification]);
 
-  // Contagem de agendamentos pendentes para badge no app móvel
   const pendingAppointmentsCount = useMemo(() => {
     return appointments.filter(a => a.status === 'scheduled').length;
   }, [appointments]);
 
-  // Forçar salvamento manual imediato na nuvem
   const handleForceCloudSync = async () => {
     if (!org) return;
     setIsManualSyncing(true);
@@ -449,19 +471,17 @@ export default function App() {
 
     setIsManualSyncing(false);
     if (success) {
-      setSyncStatusMsg('✅ Todos os dados foram salvos com sucesso na nuvem!');
+      setSyncStatusMsg('✅ Dados salvos com sucesso na nuvem!');
       setTimeout(() => setSyncStatusMsg(''), 4000);
     } else {
       setSyncStatusMsg('⚠️ Dados salvos localmente.');
     }
   };
 
-  // Função central de criação de agendamento (usada pelo cliente e pelo administrador)
   const handleAddAppointment = useCallback((newApp: Omit<Appointment, 'id'>) => {
     const targetDate = newApp.date || new Date().toISOString().split('T')[0];
     const duration = newApp.duration_minutes || (newApp.services?.reduce((sum, s) => sum + (s.duration_minutes || 30), 0)) || 30;
 
-    // Verificação de segurança contra agendamentos simultâneos ou duplicados
     const candidateStart = timeToMinutes(newApp.start_time);
     const candidateEnd = candidateStart + duration;
 
@@ -479,7 +499,6 @@ export default function App() {
     });
 
     if (isConflict) {
-      console.warn('Conflito detectado: O horário selecionado já está ocupado.');
       return;
     }
 
@@ -491,14 +510,12 @@ export default function App() {
       status: newApp.status || 'scheduled',
     };
 
-    // 1. Atualiza lista de agendamentos localmente
     setAppointments((prev) => {
       const updated = [created, ...prev];
       localStorage.setItem(STORAGE_KEYS.APPOINTMENTS, JSON.stringify(updated));
       return updated;
     });
 
-    // 2. Atualiza ou cria o cliente na base
     setClients((prev) => {
       const existing = prev.find(c => c.phone === newApp.client_phone || c.name === newApp.client_name);
       let updatedClients: Client[];
@@ -525,29 +542,23 @@ export default function App() {
       return updatedClients;
     });
 
-    // 3. Transmite em tempo real para todas as outras abas/telas do painel
     if (broadcastChannelRef.current) {
       try {
         broadcastChannelRef.current.postMessage({
           type: 'NEW_APPOINTMENT',
           payload: created,
         });
-      } catch (e) {
-        console.warn('Erro ao transmitir pelo BroadcastChannel:', e);
-      }
+      } catch (e) {}
     }
 
-    // 4. Envia imediatamente para a nuvem
     pushAppointmentToCloud(created, org?.slug);
 
-    // 5. Se a ação foi feita na mesma aba mas o usuário está no painel, toca o som e mostra toast
     playNotificationSound();
     setToastNotification(created);
 
     return created;
   }, [appointments, org?.slug]);
 
-  // Ações de Autenticação
   const handleLogin = (targetOrg: Organization) => {
     setOrg(targetOrg);
     setIsLoggedIn(true);
@@ -573,7 +584,6 @@ export default function App() {
       setBarbers(currentBarbers);
     }
 
-    // Salva imediatamente na nuvem
     saveBarbershopToCloud({
       org: newOrg,
       savedOrgs: [newOrg],
@@ -608,7 +618,6 @@ export default function App() {
     setIsLoggedIn(true);
     setCurrentTab('dashboard');
 
-    // Salva demo na nuvem
     saveBarbershopToCloud({
       org: demoData.org,
       savedOrgs: [demoData.org],
@@ -623,9 +632,7 @@ export default function App() {
         broadcastChannelRef.current.postMessage({ type: 'APPOINTMENTS_SYNC', payload: demoData.appointments });
         broadcastChannelRef.current.postMessage({ type: 'SERVICES_SYNC', payload: demoData.services });
         broadcastChannelRef.current.postMessage({ type: 'BARBERS_SYNC', payload: demoData.barbers });
-      } catch (e) {
-        console.warn(e);
-      }
+      } catch (e) {}
     }
   };
 
@@ -641,7 +648,6 @@ export default function App() {
     setCurrentTab('auth');
   };
 
-  // Gerar link de sincronização para abrir no celular
   const generateMobileSyncLink = () => {
     const payload = {
       org,
@@ -662,12 +668,25 @@ export default function App() {
     setTimeout(() => setCopiedSyncLink(false), 2500);
   };
 
-  // Identificar organização correta para o agendamento do cliente (baseado no slug da URL)
   const urlSlug = getSlugFromUrl();
-  const currentPublicOrg = (urlSlug ? savedOrgs.find(o => o.slug === urlSlug || o.id === urlSlug) : null) || org || savedOrgs[0] || INITIAL_ORG;
+  const currentPublicOrg = publicOrgData || (urlSlug ? savedOrgs.find(o => o.slug === urlSlug || o.id === urlSlug) : null) || org || savedOrgs[0] || INITIAL_ORG;
 
   // 1. ROTA PÚBLICA DE AGENDAMENTO DO CLIENTE (MOBILE-FIRST)
   if (isClientRoute || currentTab === 'booking') {
+    if (isLoadingPublicData) {
+      return (
+        <div className="min-h-screen bg-[#070B14] text-slate-100 flex flex-col items-center justify-center p-6 text-center space-y-4">
+          <div className="w-16 h-16 rounded-2xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 animate-pulse">
+            <Scissors className="w-8 h-8" />
+          </div>
+          <div>
+            <h3 className="text-lg font-bold text-white">Carregando Barbearia...</h3>
+            <p className="text-xs text-slate-400 mt-1">Buscando catálogo de serviços e horários em tempo real.</p>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="min-h-screen bg-[#070B14] text-slate-100 font-sans p-3 sm:p-6 flex items-center justify-center">
         <TenantBookingView 
@@ -687,7 +706,7 @@ export default function App() {
     );
   }
 
-  // 2. TELA DE AUTENTICAÇÃO (ENTRAR / CADASTRAR NOVO / DESLOGADO)
+  // 2. TELA DE AUTENTICAÇÃO
   if (!isLoggedIn || !org || currentTab === 'auth') {
     return (
       <div className="min-h-screen bg-[#070B14] text-slate-100 font-sans p-4 sm:p-8 flex items-center justify-center">
@@ -701,7 +720,7 @@ export default function App() {
     );
   }
 
-  // 3. PAINEL ADMINISTRATIVO INTERNO DA BARBEARIA (MOBILE-FIRST COM BOTTOM NAV & DESKTOP SIDEBAR)
+  // 3. PAINEL ADMINISTRATIVO INTERNO DA BARBEARIA
   return (
     <div className="min-h-screen bg-[#070B14] text-slate-100 font-sans flex flex-col md:flex-row relative">
       {/* TOAST DE NOVO AGENDAMENTO EM TEMPO REAL */}
@@ -751,7 +770,7 @@ export default function App() {
         </div>
       )}
 
-      {/* SIDEBAR DE NAVEGAÇÃO PARA TELAS MÉDIAS E GRANDES (DESKTOP) */}
+      {/* SIDEBAR PARA DESKTOP */}
       <Sidebar
         currentTab={currentTab}
         setCurrentTab={setCurrentTab}
@@ -763,7 +782,6 @@ export default function App() {
 
       {/* ÁREA PRINCIPAL COM SCROLL E PADDING INFERIOR SEGURO PARA CELULAR */}
       <main className="flex-1 flex flex-col min-w-0 overflow-y-auto bg-[#070B14] pb-24 md:pb-8">
-        {/* Cabeçalho Smartphone / Desktop */}
         <Header 
           org={org} 
           onOpenSidebar={() => setIsSidebarOpen(true)}

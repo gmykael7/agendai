@@ -10,47 +10,21 @@ export interface CloudSyncPayload {
   updated_at?: string;
 }
 
-// Chave no localStorage para configurações de nuvem
-const CLOUD_CONFIG_KEY = 'agendai_cloud_config';
-
-// Global Cloud Sync Backup Endpoint (CORS-friendly public cloud store)
-const GLOBAL_CLOUD_URL = 'https://api.restful-api.dev/objects';
-
-export interface CloudConfig {
-  autoSyncEnabled: boolean;
-  cloudProvider: 'cloudflare' | 'global_cloud';
-  lastSyncedAt?: string;
-}
-
-export const getCloudConfig = (): CloudConfig => {
-  const saved = localStorage.getItem(CLOUD_CONFIG_KEY);
-  if (saved) {
-    try {
-      return JSON.parse(saved);
-    } catch {}
-  }
-  return {
-    autoSyncEnabled: true,
-    cloudProvider: 'cloudflare',
-  };
-};
-
-export const saveCloudConfig = (config: Partial<CloudConfig>) => {
-  const current = getCloudConfig();
-  const next = { ...current, ...config };
-  localStorage.setItem(CLOUD_CONFIG_KEY, JSON.stringify(next));
-  return next;
-};
-
 // Gera chave única normalizada para o e-mail ou slug
-const getSanitizedKey = (identifier: string): string => {
+export const getSanitizedKey = (identifier: string): string => {
+  if (!identifier) return 'default';
   return identifier
     .toLowerCase()
     .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]/g, '_');
 };
 
-// 1. SALVAR DADOS DA BARBEARIA NA NUVEM
+// Endpoints da Nuvem Global Pública (CORS aberto, persistência permanente em nuvem)
+const GLOBAL_KV_URL_1 = 'https://kv.val.run';
+
+// 1. SALVAR DADOS DA BARBEARIA NA NUVEM (SALVA NO LOCAL E NA NUVEM GLOBAL)
 export const saveBarbershopToCloud = async (payload: CloudSyncPayload): Promise<boolean> => {
   const email = payload.org?.email?.toLowerCase().trim();
   const slug = payload.org?.slug?.toLowerCase().trim();
@@ -64,68 +38,52 @@ export const saveBarbershopToCloud = async (payload: CloudSyncPayload): Promise<
     updated_at: new Date().toISOString(),
   };
 
-  let savedLocally = false;
-  let savedGlobally = false;
+  const payloadString = JSON.stringify(payloadWithMeta);
 
-  // A. Tentativa 1: Endpoint /api/sync (Vite Server Middleware ou Cloudflare Functions)
+  let savedSuccess = false;
+
+  // A. Servidor Local / Cloudflare Worker (/api/sync)
   try {
     const res = await fetch('/api/sync', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(payloadWithMeta),
+      body: payloadString,
     });
-
     if (res.ok) {
-      savedLocally = true;
+      savedSuccess = true;
     }
   } catch (err) {
-    console.debug('Endpoint /api/sync indisponível no momento:', err);
+    console.debug('Endpoint /api/sync local offline:', err);
   }
 
-  // B. Tentativa 2: Backup em Nuvem Global via Storage REST (Acessível de qualquer 4G/5G/Wi-Fi)
+  // B. Nuvem Global 1 (kv.val.run) - Salva por e-mail e por slug
   try {
-    const key = `agendai_app_${getSanitizedKey(email || slug || 'default')}`;
-    const remotePayload = {
-      name: key,
-      data: payloadWithMeta,
-    };
-
-    // Armazena ID do objeto remoto salvo no localStorage para updates
-    const existingObjectId = localStorage.getItem(`agendai_cloud_id_${key}`);
-
-    if (existingObjectId) {
-      const updateRes = await fetch(`${GLOBAL_CLOUD_URL}/${existingObjectId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(remotePayload),
-      });
-      if (updateRes.ok) savedGlobally = true;
-    } else {
-      const createRes = await fetch(GLOBAL_CLOUD_URL, {
+    if (email) {
+      const emailKey = `agendai_${getSanitizedKey(email)}`;
+      await fetch(`${GLOBAL_KV_URL_1}/${emailKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(remotePayload),
+        body: payloadString,
       });
-      if (createRes.ok) {
-        const createdObj = await createRes.json() as any;
-        if (createdObj && createdObj.id) {
-          localStorage.setItem(`agendai_cloud_id_${key}`, createdObj.id);
-          savedGlobally = true;
-        }
-      }
+      savedSuccess = true;
+    }
+
+    if (slug) {
+      const slugKey = `agendai_slug_${getSanitizedKey(slug)}`;
+      await fetch(`${GLOBAL_KV_URL_1}/${slugKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: payloadString,
+      });
+      savedSuccess = true;
     }
   } catch (err) {
-    console.debug('Falha no backup em nuvem global:', err);
+    console.debug('Falha ao salvar no kv.val.run:', err);
   }
 
-  if (savedLocally || savedGlobally) {
-    saveCloudConfig({ lastSyncedAt: payloadWithMeta.updated_at });
-    return true;
-  }
-
-  return false;
+  return savedSuccess;
 };
 
 // 2. CARREGAR DADOS DA BARBEARIA DA NUVEM POR E-MAIL OU SLUG
@@ -137,11 +95,9 @@ export const loadBarbershopFromCloud = async (
 
   const isEmail = clean.includes('@');
   const queryParam = isEmail ? `email=${encodeURIComponent(clean)}` : `slug=${encodeURIComponent(clean)}`;
+  const key = isEmail ? `agendai_${getSanitizedKey(clean)}` : `agendai_slug_${getSanitizedKey(clean)}`;
 
-  let localCandidate: CloudSyncPayload | null = null;
-  let globalCandidate: CloudSyncPayload | null = null;
-
-  // A. Tentativa 1: Endpoint /api/sync
+  // A. Tentativa 1: Endpoint /api/sync (Vite Local ou Cloudflare Pages Function)
   try {
     const res = await fetch(`/api/sync?${queryParam}`, {
       method: 'GET',
@@ -154,7 +110,7 @@ export const loadBarbershopFromCloud = async (
     if (res.ok) {
       const data = await res.json() as any;
       if (data && data.org) {
-        localCandidate = {
+        return {
           org: data.org,
           savedOrgs: Array.isArray(data.savedOrgs) ? data.savedOrgs : [data.org],
           services: Array.isArray(data.services) ? data.services : [],
@@ -166,38 +122,52 @@ export const loadBarbershopFromCloud = async (
       }
     }
   } catch (err) {
-    console.debug('Falha ao consultar /api/sync:', err);
+    console.debug('Consulta /api/sync local não respondeu:', err);
   }
 
-  // B. Tentativa 2: Consulta à Nuvem Global por ID salvo ou chave
+  // B. Tentativa 2: Nuvem Global (kv.val.run)
   try {
-    const key = `agendai_app_${getSanitizedKey(clean)}`;
-    const savedObjectId = localStorage.getItem(`agendai_cloud_id_${key}`);
+    const res = await fetch(`${GLOBAL_KV_URL_1}/${key}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache',
+      },
+    });
 
-    if (savedObjectId) {
-      const remoteRes = await fetch(`${GLOBAL_CLOUD_URL}/${savedObjectId}`, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      if (remoteRes.ok) {
-        const remoteData = await remoteRes.json() as any;
-        if (remoteData && remoteData.data && remoteData.data.org) {
-          globalCandidate = remoteData.data;
-        }
+    if (res.ok) {
+      const data = await res.json() as any;
+      if (data && data.org) {
+        return {
+          org: data.org,
+          savedOrgs: Array.isArray(data.savedOrgs) ? data.savedOrgs : [data.org],
+          services: Array.isArray(data.services) ? data.services : [],
+          barbers: Array.isArray(data.barbers) ? data.barbers : [],
+          appointments: Array.isArray(data.appointments) ? data.appointments : [],
+          clients: Array.isArray(data.clients) ? data.clients : [],
+          updated_at: data.updated_at,
+        };
       }
     }
   } catch (err) {
-    console.debug('Falha ao consultar nuvem global:', err);
+    console.debug('Falha ao consultar kv.val.run:', err);
   }
 
-  // Retorna a versão mais recente entre local e global
-  if (localCandidate && globalCandidate) {
-    const localTime = new Date(localCandidate.updated_at || 0).getTime();
-    const globalTime = new Date(globalCandidate.updated_at || 0).getTime();
-    return globalTime > localTime ? globalCandidate : localCandidate;
+  // C. Tentativa 3: Se procurou por slug e falhou, tenta procurar por email sanitizado ou vice-versa
+  if (!isEmail) {
+    try {
+      const res = await fetch(`${GLOBAL_KV_URL_1}/agendai_${getSanitizedKey(clean)}`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (res.ok) {
+        const data = await res.json() as any;
+        if (data && data.org) return data;
+      }
+    } catch {}
   }
 
-  return localCandidate || globalCandidate || null;
+  return null;
 };
 
 // 3. ENVIAR NOVO AGENDAMENTO DO CLIENTE DIRETO PARA A NUVEM
@@ -205,21 +175,43 @@ export const pushAppointmentToCloud = async (
   appointment: Appointment,
   orgSlug?: string
 ): Promise<boolean> => {
+  const targetSlug = (orgSlug || appointment.org_id || '').toLowerCase().trim();
+
+  // A. Salva via /api/appointment
   try {
-    const res = await fetch('/api/appointment', {
+    await fetch('/api/appointment', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         ...appointment,
-        org_slug: orgSlug || appointment.org_id,
+        org_slug: targetSlug,
       }),
     });
-
-    return res.ok;
   } catch (err) {
-    console.debug('Erro ao enviar agendamento para /api/appointment:', err);
-    return false;
+    console.debug('Erro ao enviar via /api/appointment:', err);
   }
+
+  // B. Atualiza a nuvem global diretamente com o novo agendamento
+  if (targetSlug) {
+    try {
+      const currentData = await loadBarbershopFromCloud(targetSlug);
+      if (currentData && currentData.org) {
+        const prevAppointments = currentData.appointments || [];
+        if (!prevAppointments.some(a => a.id === appointment.id)) {
+          const updatedAppointments = [appointment, ...prevAppointments];
+          await saveBarbershopToCloud({
+            ...currentData,
+            appointments: updatedAppointments,
+          });
+          return true;
+        }
+      }
+    } catch (err) {
+      console.debug('Erro ao persistir agendamento na nuvem global:', err);
+    }
+  }
+
+  return false;
 };
