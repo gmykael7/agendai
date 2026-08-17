@@ -2,7 +2,7 @@ import React from 'react';
 import { 
   Scissors, Building2, Calendar, Smartphone, 
   ArrowUpRight, Users, Settings, Wallet, 
-  CheckSquare, LayoutDashboard, X, SlidersHorizontal
+  CheckSquare, LayoutDashboard, X, SlidersHorizontal, LogOut
 } from 'lucide-react';
 import { Organization, TabType } from '../../types';
 
@@ -12,6 +12,7 @@ interface SidebarProps {
   org: Organization | null;
   isSidebarOpen: boolean;
   setIsSidebarOpen: (isOpen: boolean) => void;
+  onLogout: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -20,6 +21,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   org,
   isSidebarOpen,
   setIsSidebarOpen,
+  onLogout,
 }) => {
   const menuItems: { id: TabType; label: string; icon: React.FC<{ className?: string }> }[] = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -104,7 +106,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </nav>
         </div>
 
-        {/* Rodapé da Sidebar com Link Público do Cliente */}
+        {/* Rodapé da Sidebar */}
         <div className="p-4 border-t border-slate-800/80 space-y-2">
           <button
             onClick={() => { setCurrentTab('booking'); setIsSidebarOpen(false); }}
@@ -115,6 +117,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
               Página do Cliente
             </span>
             <ArrowUpRight className="w-3.5 h-3.5" />
+          </button>
+
+          <button
+            onClick={() => {
+              if (window.confirm('Deseja realmente sair do sistema?')) {
+                onLogout();
+              }
+            }}
+            className="w-full flex items-center gap-2.5 px-3.5 py-2 rounded-xl text-xs font-medium text-slate-400 hover:text-rose-400 hover:bg-rose-950/20 transition-all"
+          >
+            <LogOut className="w-4 h-4" />
+            Sair do Sistema
           </button>
         </div>
       </aside>

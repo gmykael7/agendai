@@ -58,6 +58,8 @@ export interface Organization {
   id: string;
   name: string;
   owner_name?: string;
+  email?: string;
+  password?: string;
   slug: string;
   phone: string;
   address?: string;
@@ -74,4 +76,4 @@ export type TabType =
   | 'clientes' 
   | 'ajustes' 
   | 'booking' 
-  | 'onboarding';
+  | 'auth';

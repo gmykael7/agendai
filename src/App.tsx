@@ -16,7 +16,7 @@ import { CaixaView } from './views/CaixaView';
 import { ClientesView } from './views/ClientesView';
 import { AjustesView } from './views/AjustesView';
 import { TenantBookingView } from './views/TenantBookingView';
-import { AuthOnboardingView } from './views/AuthOnboardingView';
+import { AuthView } from './views/AuthView';
 import { 
   INITIAL_ORG, 
   INITIAL_SERVICES, 
@@ -26,18 +26,32 @@ import {
 } from './data/mockData';
 
 const STORAGE_KEYS = {
-  ORG: 'agendai_org',
+  CURRENT_ORG: 'agendai_current_org',
+  ALL_ORGS: 'agendai_all_orgs',
   SERVICES: 'agendai_services',
   BARBERS: 'agendai_barbers',
   APPOINTMENTS: 'agendai_appointments',
   CLIENTS: 'agendai_clients',
+  AUTH_SESSION: 'agendai_session_active',
 };
 
 export default function App() {
-  // Inicialização do estado a partir do localStorage ou vazio (Zero State)
+  // Lista de organizações cadastradas
+  const [savedOrgs, setSavedOrgs] = useState<Organization[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.ALL_ORGS);
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  // Organização ativa na sessão
   const [org, setOrg] = useState<Organization | null>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.ORG);
+    const saved = localStorage.getItem(STORAGE_KEYS.CURRENT_ORG);
     return saved ? JSON.parse(saved) : null;
+  });
+
+  // Estado da sessão (se está logado ou deslogado)
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
+    const session = localStorage.getItem(STORAGE_KEYS.AUTH_SESSION);
+    return session === 'true' && !!localStorage.getItem(STORAGE_KEYS.CURRENT_ORG);
   });
 
   const [services, setServices] = useState<Service[]>(() => {
@@ -67,11 +81,7 @@ export default function App() {
     return hash.includes('agendar') || search.includes('agendar') || search.includes('booking');
   });
 
-  const [currentTab, setCurrentTab] = useState<TabType>(() => {
-    const savedOrg = localStorage.getItem(STORAGE_KEYS.ORG);
-    return savedOrg ? 'dashboard' : 'onboarding';
-  });
-
+  const [currentTab, setCurrentTab] = useState<TabType>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   // Monitorar alterações na URL para suporte a links diretos enviados aos clientes
@@ -86,14 +96,22 @@ export default function App() {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  // Persistência automática no localStorage
+  // Persistência automática
   useEffect(() => {
     if (org) {
-      localStorage.setItem(STORAGE_KEYS.ORG, JSON.stringify(org));
+      localStorage.setItem(STORAGE_KEYS.CURRENT_ORG, JSON.stringify(org));
     } else {
-      localStorage.removeItem(STORAGE_KEYS.ORG);
+      localStorage.removeItem(STORAGE_KEYS.CURRENT_ORG);
     }
   }, [org]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.ALL_ORGS, JSON.stringify(savedOrgs));
+  }, [savedOrgs]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.AUTH_SESSION, isLoggedIn ? 'true' : 'false');
+  }, [isLoggedIn]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.SERVICES, JSON.stringify(services));
@@ -111,6 +129,29 @@ export default function App() {
     localStorage.setItem(STORAGE_KEYS.CLIENTS, JSON.stringify(clients));
   }, [clients]);
 
+  // Ações de Autenticação
+  const handleLogin = (targetOrg: Organization) => {
+    setOrg(targetOrg);
+    setIsLoggedIn(true);
+    setCurrentTab('dashboard');
+  };
+
+  const handleRegister = (newOrg: Organization) => {
+    setOrg(newOrg);
+    setSavedOrgs(prev => {
+      const exists = prev.some(o => o.id === newOrg.id || o.slug === newOrg.slug);
+      return exists ? prev.map(o => o.id === newOrg.id ? newOrg : o) : [newOrg, ...prev];
+    });
+    setIsLoggedIn(true);
+    setCurrentTab('dashboard');
+  };
+
+  const handleLogout = () => {
+    setIsLoggedIn(false);
+    localStorage.setItem(STORAGE_KEYS.AUTH_SESSION, 'false');
+    setCurrentTab('auth');
+  };
+
   const handleAddAppointment = (newApp: Omit<Appointment, 'id'>) => {
     const created: Appointment = {
       ...newApp,
@@ -119,7 +160,6 @@ export default function App() {
     };
     setAppointments((prev) => [created, ...prev]);
 
-    // Atualizar ou adicionar à base de clientes da barbearia
     setClients((prev) => {
       const existing = prev.find(c => c.phone === newApp.client_phone || c.name === newApp.client_name);
       if (existing) {
@@ -143,11 +183,6 @@ export default function App() {
     });
   };
 
-  const handleCompleteOnboarding = (newOrg: Organization) => {
-    setOrg(newOrg);
-    setCurrentTab('dashboard');
-  };
-
   const handleLoadDemo = (demoData: {
     org: Organization;
     services: Service[];
@@ -155,24 +190,28 @@ export default function App() {
     appointments: Appointment[];
   }) => {
     setOrg(demoData.org);
+    setSavedOrgs(prev => prev.some(o => o.id === demoData.org.id) ? prev : [demoData.org, ...prev]);
     setServices(demoData.services);
     setBarbers(demoData.barbers);
     setAppointments(demoData.appointments);
     setClients(INITIAL_CLIENTS);
+    setIsLoggedIn(true);
     setCurrentTab('dashboard');
   };
 
   const handleResetAll = () => {
     localStorage.clear();
     setOrg(null);
+    setSavedOrgs([]);
     setServices([]);
     setBarbers([]);
     setAppointments([]);
     setClients([]);
-    setCurrentTab('onboarding');
+    setIsLoggedIn(false);
+    setCurrentTab('auth');
   };
 
-  // 1. SE O CLIENTE ESTIVER ACESSANDO PELO LINK PÚBLICO (ex: /#/agendar/barbearia)
+  // 1. ROTA PÚBLICA DE AGENDAMENTO DO CLIENTE
   if (isClientRoute || currentTab === 'booking') {
     return (
       <div className="min-h-screen bg-[#070B14] text-slate-100 font-sans p-4 sm:p-6 flex items-center justify-center">
@@ -182,7 +221,7 @@ export default function App() {
           barbers={barbers}
           appointments={appointments}
           onAddAppointment={handleAddAppointment}
-          onBackToAdmin={org ? () => {
+          onBackToAdmin={isLoggedIn && org ? () => {
             window.location.hash = '';
             setIsClientRoute(false);
             setCurrentTab('dashboard');
@@ -193,15 +232,15 @@ export default function App() {
     );
   }
 
-  // 2. SE NÃO HOUVER BARBEARIA CONFIGURADA OU ESTIVER NA ABA ONBOARDING
-  if (!org || currentTab === 'onboarding') {
+  // 2. TELA DE AUTENTICAÇÃO (ENTRAR / CADASTRAR NOVO / DESLOGADO)
+  if (!isLoggedIn || !org || currentTab === 'auth') {
     return (
       <div className="min-h-screen bg-[#070B14] text-slate-100 font-sans p-4 sm:p-8 flex items-center justify-center">
-        <AuthOnboardingView
-          onComplete={handleCompleteOnboarding}
+        <AuthView
+          onLogin={handleLogin}
+          onRegister={handleRegister}
           onLoadDemo={handleLoadDemo}
-          onCancel={org ? () => setCurrentTab('dashboard') : undefined}
-          hasExistingOrg={!!org}
+          savedOrganizations={savedOrgs}
         />
       </div>
     );
@@ -217,6 +256,7 @@ export default function App() {
         org={org}
         isSidebarOpen={isSidebarOpen}
         setIsSidebarOpen={setIsSidebarOpen}
+        onLogout={handleLogout}
       />
 
       {/* ÁREA PRINCIPAL */}
