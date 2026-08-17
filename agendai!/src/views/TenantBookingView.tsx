@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { 
   Scissors, CheckCircle, Clock, Calendar, 
   MapPin, Phone, MessageSquare, ArrowLeft, User, 
-  Sparkles, Check, ChevronRight, AlertCircle, Share2, Plus, CheckSquare, Square
+  Sparkles, Check, ChevronRight, AlertCircle, Share2, Plus, CheckSquare, Square, Lock
 } from 'lucide-react';
 import { Organization, Service, Barber, Appointment } from '../types';
 
@@ -15,6 +15,42 @@ interface TenantBookingViewProps {
   onBackToAdmin?: () => void;
   isStandalone?: boolean;
 }
+
+// Converte horário 'HH:mm' para minutos a partir da meia-noite
+const timeToMinutes = (timeStr: string): number => {
+  if (!timeStr) return 0;
+  const [h, m] = timeStr.split(':').map(Number);
+  return (h || 0) * 60 + (m || 0);
+};
+
+// Verifica se um slot de horário está ocupado por agendamento existente
+export const isTimeSlotOccupied = (
+  slotTime: string,
+  candidateDurationMinutes: number,
+  barberId: string,
+  dateStr: string,
+  allAppointments: Appointment[],
+  excludeAppointmentId?: string
+): boolean => {
+  const candidateStart = timeToMinutes(slotTime);
+  const candidateEnd = candidateStart + (candidateDurationMinutes || 30);
+
+  return allAppointments.some(app => {
+    if (excludeAppointmentId && app.id === excludeAppointmentId) return false;
+    if (app.status === 'canceled') return false;
+    if (app.barber_id !== barberId) return false;
+
+    const appDate = app.date || dateStr;
+    if (appDate !== dateStr) return false;
+
+    const appStart = timeToMinutes(app.start_time);
+    const appDuration = app.duration_minutes || (app.services?.reduce((sum, s) => sum + (s.duration_minutes || 30), 0)) || 30;
+    const appEnd = appStart + appDuration;
+
+    // Sobreposição de horários: candidateStart < appEnd && appStart < candidateEnd
+    return candidateStart < appEnd && appStart < candidateEnd;
+  });
+};
 
 export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
   org,
@@ -34,6 +70,7 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
   const [clientPhone, setClientPhone] = useState('');
   const [confirmed, setConfirmed] = useState(false);
   const [lastCreatedAppointment, setLastCreatedAppointment] = useState<Appointment | null>(null);
+  const [bookingError, setBookingError] = useState<string>('');
 
   // Próximos 7 dias para escolha de data
   const dateOptions = useMemo(() => {
@@ -143,7 +180,27 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
 
   const handleFinishBooking = (e: React.FormEvent) => {
     e.preventDefault();
-    if (selectedServices.length === 0 || !selectedBarber || !selectedTime || !clientName.trim() || !clientPhone.trim()) return;
+    setBookingError('');
+
+    if (selectedServices.length === 0 || !selectedBarber || !selectedTime || !clientName.trim() || !clientPhone.trim()) {
+      return;
+    }
+
+    // VERIFICAÇÃO RIGOROSA DE DISPONIBILIDADE ANTES DE CONFIRMAR
+    const isOccupied = isTimeSlotOccupied(
+      selectedTime,
+      totalDuration,
+      selectedBarber.id,
+      selectedDate,
+      appointments
+    );
+
+    if (isOccupied) {
+      setBookingError(`⚠️ O horário das ${selectedTime} já foi reservado ou colide com outro agendamento. Por favor, escolha outro horário livre.`);
+      setStep(4);
+      setSelectedTime('');
+      return;
+    }
 
     const joinedNames = selectedServices.map(s => s.name).join(' + ');
 
@@ -219,6 +276,14 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
             <p className="text-xs text-emerald-400 font-semibold mt-1">Agendamento Online Rápido</p>
           </div>
 
+          {/* MENSAGEM DE ERRO/ALERTA DE HORÁRIO OCUPADO */}
+          {bookingError && (
+            <div className="mx-6 mt-4 p-3.5 bg-rose-950/40 border border-rose-800/60 rounded-2xl text-rose-300 text-xs flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+              <span>{bookingError}</span>
+            </div>
+          )}
+
           {/* VERIFICAÇÃO SE HÁ SERVIÇOS E PROFISSIONAIS CADASTRADOS */}
           {activeServices.length === 0 || activeBarbers.length === 0 ? (
             <div className="p-10 text-center space-y-4">
@@ -250,7 +315,7 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
               <div>
                 <h3 className="text-2xl font-bold text-white">Agendamento Confirmado!</h3>
                 <p className="text-xs text-slate-300 mt-1">
-                  Seu pedido com {lastCreatedAppointment.services?.length || 1} serviço(s) foi salvo no sistema da barbearia.
+                  Seu horário foi reservado exclusivamente para você no sistema da barbearia.
                 </p>
               </div>
 
@@ -294,7 +359,7 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
                 <div className="flex justify-between border-t border-slate-800/80 pt-2.5">
                   <div>
                     <span className="text-slate-400 block">Total a Pagar:</span>
-                    <span className="text-[11px] text-slate-500">Duração aprox: {lastCreatedAppointment.duration_minutes || totalDuration} min</span>
+                    <span className="text-[11px] text-slate-500">Duração prevista: {lastCreatedAppointment.duration_minutes || totalDuration} min</span>
                   </div>
                   <span className="text-emerald-400 font-black font-mono text-lg">R$ {lastCreatedAppointment.price.toFixed(2)}</span>
                 </div>
@@ -313,7 +378,7 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
                 </a>
 
                 <p className="text-[11px] text-slate-400">
-                  Clique no botão acima para abrir o WhatsApp e avisar a barbearia sobre sua reserva.
+                  Clique no botão acima para abrir o WhatsApp e avisar a barbearia sobre sua chegada.
                 </p>
 
                 <button
@@ -325,6 +390,7 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
                     setSelectedTime('');
                     setClientName('');
                     setClientPhone('');
+                    setBookingError('');
                   }}
                   className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-semibold text-xs transition-colors"
                 >
@@ -354,6 +420,7 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
                           type="button"
                           onClick={() => {
                             setSelectedDate(d.dateStr);
+                            setBookingError('');
                             setStep(2);
                           }}
                           className={`p-3 rounded-2xl border text-center transition-all ${
@@ -505,7 +572,7 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
                 </div>
               )}
 
-              {/* ETAPA 4: HORÁRIO */}
+              {/* ETAPA 4: HORÁRIO (BLOQUEIO TOTAL DE HORÁRIOS OCUPADOS) */}
               {step === 4 && (
                 <div className="space-y-4 animate-fadeIn">
                   <div className="flex justify-between items-center">
@@ -520,34 +587,48 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
 
                   <div className="bg-[#0B1120] p-3 rounded-xl border border-slate-800 text-xs text-slate-300 flex items-center justify-between">
                     <span>Profissional: <strong className="text-white">{selectedBarber?.full_name}</strong></span>
-                    <span className="text-emerald-400 font-medium">Tempo previsto: {totalDuration} min</span>
+                    <span className="text-emerald-400 font-medium">Duração: {totalDuration} min</span>
                   </div>
 
-                  <p className="text-xs text-slate-400">
-                    Horários para <strong className="text-emerald-400">{new Date(selectedDate + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}</strong>:
-                  </p>
+                  <div className="flex items-center justify-between text-xs text-slate-400">
+                    <span>
+                      Data: <strong className="text-emerald-400">{new Date(selectedDate + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}</strong>
+                    </span>
+                    <span className="flex items-center gap-3 text-[11px]">
+                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400"></span> Disponível</span>
+                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-slate-600"></span> Ocupado</span>
+                    </span>
+                  </div>
 
                   <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5 max-h-64 overflow-y-auto pr-1">
                     {timeSlots.map((time) => {
-                      const isOccupied = appointments.some(
-                        a => (a.date || selectedDate) === selectedDate && a.start_time === time && a.barber_id === selectedBarber?.id && a.status !== 'canceled'
+                      const isOccupied = isTimeSlotOccupied(
+                        time,
+                        totalDuration,
+                        selectedBarber?.id || '',
+                        selectedDate,
+                        appointments
                       );
 
                       return (
                         <button
                           key={time}
+                          type="button"
                           disabled={isOccupied}
                           onClick={() => {
                             setSelectedTime(time);
+                            setBookingError('');
                             setStep(5);
                           }}
-                          className={`py-2.5 rounded-xl font-mono text-xs font-bold border transition-all ${
+                          className={`py-2.5 px-2 rounded-xl font-mono text-xs font-bold border transition-all flex items-center justify-center gap-1.5 ${
                             isOccupied
-                              ? 'bg-[#0B1120]/40 text-slate-600 border-slate-900 cursor-not-allowed line-through'
-                              : 'bg-[#0B1120] text-emerald-400 border-slate-800 hover:border-emerald-500 hover:bg-emerald-500/10'
+                              ? 'bg-[#0B1120]/40 text-slate-600 border-slate-900/80 cursor-not-allowed line-through opacity-50 shadow-inner'
+                              : 'bg-[#0B1120] text-emerald-400 border-slate-800 hover:border-emerald-500 hover:bg-emerald-500/10 cursor-pointer'
                           }`}
+                          title={isOccupied ? 'Horário já reservado ou indisponível' : 'Horário livre para agendamento'}
                         >
-                          {time}
+                          {isOccupied && <Lock className="w-3 h-3 text-slate-600 shrink-0" />}
+                          <span>{time}</span>
                         </button>
                       );
                     })}

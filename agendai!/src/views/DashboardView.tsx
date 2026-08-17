@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { 
   ArrowRight, Plus, Scissors, CheckCircle, Clock, 
-  X, Phone, Calendar, User, DollarSign, Share2, Copy, Check, MessageSquare, QrCode, CreditCard, Banknote
+  X, Phone, Calendar, User, DollarSign, Share2, Copy, Check, MessageSquare, QrCode, CreditCard, Banknote, AlertCircle
 } from 'lucide-react';
 import { Appointment, Service, Barber, Organization } from '../types';
 
@@ -14,6 +14,39 @@ interface DashboardViewProps {
   onNavigateToAgenda: () => void;
   onNavigateToServices: () => void;
 }
+
+const timeToMinutes = (timeStr: string): number => {
+  if (!timeStr) return 0;
+  const [h, m] = timeStr.split(':').map(Number);
+  return (h || 0) * 60 + (m || 0);
+};
+
+const isTimeSlotOccupied = (
+  slotTime: string,
+  candidateDurationMinutes: number,
+  barberId: string,
+  dateStr: string,
+  allAppointments: Appointment[],
+  excludeAppointmentId?: string
+): boolean => {
+  const candidateStart = timeToMinutes(slotTime);
+  const candidateEnd = candidateStart + (candidateDurationMinutes || 30);
+
+  return allAppointments.some(app => {
+    if (excludeAppointmentId && app.id === excludeAppointmentId) return false;
+    if (app.status === 'canceled') return false;
+    if (app.barber_id !== barberId) return false;
+
+    const appDate = app.date || dateStr;
+    if (appDate !== dateStr) return false;
+
+    const appStart = timeToMinutes(app.start_time);
+    const appDuration = app.duration_minutes || (app.services?.reduce((sum, s) => sum + (s.duration_minutes || 30), 0)) || 30;
+    const appEnd = appStart + appDuration;
+
+    return candidateStart < appEnd && appStart < candidateEnd;
+  });
+};
 
 export const DashboardView: React.FC<DashboardViewProps> = ({ 
   appointments, 
@@ -28,6 +61,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [completingApp, setCompletingApp] = useState<Appointment | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<'pix' | 'credit' | 'debit' | 'cash'>('pix');
   const [copiedLink, setCopiedLink] = useState(false);
+  const [modalError, setModalError] = useState('');
 
   const [clientName, setClientName] = useState('');
   const [clientPhone, setClientPhone] = useState('');
@@ -107,11 +141,27 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const handleCreateAppointment = (e: React.FormEvent) => {
     e.preventDefault();
+    setModalError('');
+
     if (!clientName.trim() || selectedServiceIds.length === 0) return;
 
     const brb = barbers.find(b => b.id === selectedBarberId) || barbers[0];
     if (!brb) {
       alert('Cadastre ao menos um profissional nos ajustes.');
+      return;
+    }
+
+    // VERIFICAÇÃO DE HORÁRIO OCUPADO
+    const occupied = isTimeSlotOccupied(
+      startTime,
+      modalTotalDuration,
+      brb.id,
+      todayStr,
+      appointments
+    );
+
+    if (occupied) {
+      setModalError(`O horário das ${startTime} hoje já está ocupado ou colide com outro agendamento para ${brb.full_name}.`);
       return;
     }
 
@@ -156,124 +206,115 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   };
 
   return (
-    <div className="space-y-6 animate-fadeIn">
+    <div className="space-y-5 sm:space-y-6 animate-fadeIn">
       {/* BANNER SUPERIOR DE BOAS-VINDAS */}
-      <div className="bg-[#121B2E] border border-slate-800 rounded-3xl p-6 sm:p-7 shadow-xl relative overflow-hidden">
+      <div className="bg-[#121B2E] border border-slate-800 rounded-3xl p-5 sm:p-7 shadow-xl relative overflow-hidden">
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
           <div className="space-y-1">
             <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight flex items-center gap-2">
               <span>🌤️</span> {greeting}, {org.owner_name || org.name}!
             </h2>
             <p className="text-xs sm:text-sm text-slate-300 font-medium">
-              {formattedDate} · Aqui está o resumo da sua barbearia hoje.
-            </p>
-            <p className="text-xs text-slate-400">
-              Acompanhe seus agendamentos e clientes em tempo real.
+              {formattedDate} · Resumo da sua barbearia hoje.
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={handleCopyPublicLink}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full border border-emerald-500/40 text-emerald-400 bg-emerald-950/30 hover:bg-emerald-900/40 text-xs font-semibold transition-all shrink-0"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-emerald-500/40 text-emerald-400 bg-emerald-950/30 hover:bg-emerald-900/40 text-xs font-semibold transition-all shrink-0 active:scale-95"
               title="Copiar link de agendamento do cliente"
             >
               {copiedLink ? <Check className="w-3.5 h-3.5" /> : <Share2 className="w-3.5 h-3.5" />}
-              {copiedLink ? 'Link Copiado!' : 'Link de Agendamento'}
+              {copiedLink ? 'Link Copiado!' : 'Link Cliente'}
             </button>
 
             <button
               onClick={onNavigateToAgenda}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full border border-slate-700 text-slate-300 bg-slate-900 hover:bg-slate-800 text-xs font-semibold transition-all shrink-0"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-700 text-slate-300 bg-slate-900 hover:bg-slate-800 text-xs font-semibold transition-all shrink-0"
             >
-              Ver agenda completa <ArrowRight className="w-3.5 h-3.5" />
+              Ver agenda <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
 
         {/* SUB-CARDS DENTRO DO BANNER */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-6">
-          <div className="bg-[#0B1120]/90 border border-slate-800 rounded-2xl p-4">
-            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-              AGENDADOS PARA HOJE
+        <div className="grid grid-cols-2 gap-2.5 sm:gap-3 mt-4 sm:mt-6">
+          <div className="bg-[#0B1120]/90 border border-slate-800 rounded-2xl p-3 sm:p-4">
+            <p className="text-[10px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+              AGENDADOS HOJE
             </p>
-            <p className="text-base font-bold text-emerald-400 mt-1">
-              {todayScheduled.length} clientes aguardando
+            <p className="text-sm sm:text-base font-bold text-emerald-400 mt-0.5">
+              {todayScheduled.length} aguardando
             </p>
           </div>
 
-          <div className="bg-[#0B1120]/90 border border-slate-800 rounded-2xl p-4">
-            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+          <div className="bg-[#0B1120]/90 border border-slate-800 rounded-2xl p-3 sm:p-4">
+            <p className="text-[10px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-wider">
               PRÓXIMO CLIENTE
             </p>
             {proximoCliente ? (
-              <div className="mt-1">
-                <p className="text-sm font-semibold text-white truncate">
-                  {proximoCliente.client_name} <span className="text-emerald-400 font-mono">({proximoCliente.start_time})</span>
+              <div className="mt-0.5">
+                <p className="text-xs sm:text-sm font-semibold text-white truncate">
+                  {proximoCliente.client_name} <span className="text-emerald-400 font-mono text-xs">({proximoCliente.start_time})</span>
                 </p>
-                <span className="block text-[11px] text-slate-400 truncate">
-                  {proximoCliente.service_name} • Barbeiro: {proximoCliente.barber_name}
+                <span className="block text-[10px] sm:text-[11px] text-slate-400 truncate">
+                  {proximoCliente.barber_name}
                 </span>
               </div>
             ) : (
-              <div>
-                <p className="text-sm font-semibold text-white mt-1">Nenhum agendamento pendente</p>
-                <p className="text-xs text-slate-500">Tudo em dia por enquanto</p>
-              </div>
+              <p className="text-xs text-slate-400 mt-0.5">Nenhum pendente</p>
             )}
           </div>
         </div>
       </div>
 
-      {/* CARDS DE MÉTRICAS PRINCIPAIS */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      {/* CARDS DE MÉTRICAS PRINCIPAIS (RESPONSIVOS NO CELULAR) */}
+      <div className="grid grid-cols-3 gap-2 sm:gap-4">
         {/* TOTAL EM CAIXA (HOJE) */}
-        <div className="bg-[#121B2E] border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-md">
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-            TOTAL EM CAIXA (HOJE)
+        <div className="bg-[#121B2E] border border-slate-800 rounded-2xl p-3.5 sm:p-6 shadow-md">
+          <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider truncate">
+            FATURAMENTO
           </p>
-          <p className="text-3xl sm:text-4xl font-black text-emerald-400 font-mono mt-2 tracking-tight">
-            R$ {totalEmCaixaHoje.toFixed(2)}
+          <p className="text-lg sm:text-3xl md:text-4xl font-black text-emerald-400 font-mono mt-1 sm:mt-2 tracking-tight">
+            R$ {totalEmCaixaHoje.toFixed(0)}
           </p>
-          <p className="text-[11px] text-slate-400 mt-1">{todayCompleted.length} serviços concluídos</p>
+          <p className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 hidden sm:block">{todayCompleted.length} concluídos</p>
         </div>
 
         {/* ATENDIMENTOS DO DIA */}
-        <div className="bg-[#121B2E] border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-md">
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-            ATENDIMENTOS DO DIA
+        <div className="bg-[#121B2E] border border-slate-800 rounded-2xl p-3.5 sm:p-6 shadow-md">
+          <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider truncate">
+            DO DIA
           </p>
-          <p className="text-3xl sm:text-4xl font-black text-white font-mono mt-2 tracking-tight">
+          <p className="text-lg sm:text-3xl md:text-4xl font-black text-white font-mono mt-1 sm:mt-2 tracking-tight">
             {todayAppointments.length}
           </p>
-          <p className="text-[11px] text-slate-400 mt-1">{todayScheduled.length} agendados / {todayCompleted.length} finalizados</p>
+          <p className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 hidden sm:block">{todayScheduled.length} agendados</p>
         </div>
 
         {/* TOTAL AGENDAMENTOS PENDENTES */}
-        <div className="bg-[#121B2E] border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-md">
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-            AGENDAMENTOS ABERTOS
+        <div className="bg-[#121B2E] border border-slate-800 rounded-2xl p-3.5 sm:p-6 shadow-md">
+          <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider truncate">
+            ABERTOS
           </p>
-          <p className="text-3xl sm:text-4xl font-black text-amber-400 font-mono mt-2 tracking-tight">
+          <p className="text-lg sm:text-3xl md:text-4xl font-black text-amber-400 font-mono mt-1 sm:mt-2 tracking-tight">
             {allScheduled.length}
           </p>
-          <p className="text-[11px] text-slate-400 mt-1">Geral em todas as datas</p>
+          <p className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 hidden sm:block">geral</p>
         </div>
       </div>
 
       {/* SEÇÃO: ATENDIMENTOS DA BARBEARIA */}
-      <div className="space-y-4 pt-2">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="space-y-3.5 pt-1">
+        <div className="flex items-center justify-between gap-2">
           <div>
-            <h3 className="text-lg sm:text-xl font-bold text-white tracking-tight">
-              Atendimentos Recentes & Agendamentos
+            <h3 className="text-base sm:text-xl font-bold text-white tracking-tight">
+              Atendimentos Recentes
             </h3>
-            <p className="text-xs text-slate-400">
-              Gerencie os agendamentos feitos pelos clientes e lançamentos manuais.
-            </p>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
             <button
               onClick={() => {
                 if (services.length === 0 || barbers.length === 0) {
@@ -281,21 +322,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 } else {
                   setSelectedServiceIds(services[0] ? [services[0].id] : []);
                   setSelectedBarberId(barbers[0]?.id || '');
+                  setModalError('');
                   setShowModal(true);
                 }
               }}
-              className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1.5 transition-all shadow-lg shadow-emerald-500/10"
+              className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1.5 transition-all shadow-lg shadow-emerald-500/10 active:scale-95"
             >
               <Plus className="w-4 h-4" />
-              Novo Atendimento
-            </button>
-
-            <button
-              onClick={onNavigateToServices}
-              className="px-4 py-2 bg-transparent hover:bg-slate-800 text-slate-200 border border-slate-700/80 font-semibold rounded-xl text-xs flex items-center gap-1.5 transition-all"
-            >
-              <Scissors className="w-3.5 h-3.5 text-slate-400" />
-              Gerenciar Serviços
+              <span>Novo</span>
             </button>
           </div>
         </div>
@@ -303,13 +337,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         {/* LISTA DE ATENDIMENTOS */}
         <div className="bg-[#121B2E] border border-slate-800 rounded-3xl overflow-hidden shadow-lg">
           {appointments.length === 0 ? (
-            <div className="p-12 text-center max-w-sm mx-auto space-y-3">
-              <div className="w-12 h-12 rounded-2xl bg-slate-800/80 text-slate-400 flex items-center justify-center mx-auto border border-slate-700/60">
-                <Calendar className="w-6 h-6" />
+            <div className="p-8 sm:p-12 text-center max-w-sm mx-auto space-y-2">
+              <div className="w-10 h-10 rounded-2xl bg-slate-800/80 text-slate-400 flex items-center justify-center mx-auto border border-slate-700/60">
+                <Calendar className="w-5 h-5" />
               </div>
-              <h4 className="font-bold text-white text-base">Nenhum atendimento registrado</h4>
+              <h4 className="font-bold text-white text-sm sm:text-base">Nenhum atendimento registrado</h4>
               <p className="text-xs text-slate-400">
-                Compartilhe o seu link público com os clientes ou clique em "Novo Atendimento".
+                Compartilhe o seu link público com os clientes ou lance um novo atendimento.
               </p>
             </div>
           ) : (
@@ -321,30 +355,30 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 return (
                   <div 
                     key={app.id}
-                    className="p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-slate-800/30 transition-colors"
+                    className="p-3.5 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-3 hover:bg-slate-800/30 transition-colors"
                   >
-                    <div className="flex items-start sm:items-center gap-4">
-                      <div className="w-20 text-center shrink-0 space-y-0.5">
-                        <span className="text-xl font-bold text-emerald-400 font-mono block">{app.start_time}</span>
-                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full inline-block ${
+                    <div className="flex items-start sm:items-center gap-3">
+                      <div className="w-16 text-center shrink-0 space-y-0.5">
+                        <span className="text-base sm:text-xl font-bold text-emerald-400 font-mono block leading-tight">{app.start_time}</span>
+                        <span className={`text-[9px] sm:text-[10px] font-semibold px-1.5 py-0.2 rounded-full inline-block ${
                           isToday ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'
                         }`}>
                           {formattedDateBadge}
                         </span>
                       </div>
-                      <div className="space-y-1">
-                        <h4 className="font-bold text-white text-base leading-snug">{app.client_name}</h4>
+                      <div className="space-y-1 flex-1 min-w-0">
+                        <h4 className="font-bold text-white text-sm sm:text-base leading-snug truncate">{app.client_name}</h4>
 
-                        {/* EXIBIÇÃO DETALHADA DE MÚLTIPLOS SERVIÇOS */}
-                        <div className="flex flex-wrap items-center gap-1.5">
+                        {/* LISTA DE SERVIÇOS DO ATENDIMENTO */}
+                        <div className="flex flex-wrap items-center gap-1">
                           {app.services && app.services.length > 0 ? (
                             app.services.map((srv, idx) => (
-                              <span key={idx} className="text-xs bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-md border border-emerald-500/20 font-medium">
+                              <span key={idx} className="text-[11px] bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-md border border-emerald-500/20 font-medium">
                                 {srv.name}
                               </span>
                             ))
                           ) : (
-                            <span className="text-xs bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-md border border-emerald-500/20 font-medium">
+                            <span className="text-[11px] bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-md border border-emerald-500/20 font-medium">
                               {app.service_name}
                             </span>
                           )}
@@ -353,25 +387,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                           </span>
                         </div>
 
-                        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                        <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
                           <span>Barbeiro: <strong className="text-slate-300">{app.barber_name}</strong></span>
                           {app.client_phone && app.client_phone !== 'Não informado' && (
                             <a
                               href={getWhatsAppDirect(app.client_phone, app.client_name)}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="text-emerald-400 hover:underline flex items-center gap-1 bg-emerald-500/10 px-2 py-0.5 rounded-md text-[11px]"
+                              className="text-emerald-400 hover:underline flex items-center gap-1 bg-emerald-500/10 px-2 py-0.5 rounded-md text-[10px]"
                             >
                               <MessageSquare className="w-3 h-3" />
-                              {app.client_phone}
+                              WhatsApp
                             </a>
                           )}
                         </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-800/60">
-                      <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                    <div className="flex items-center justify-between sm:justify-end gap-2 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-800/60">
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold ${
                         app.status === 'completed' 
                           ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
                           : app.status === 'canceled'
@@ -382,17 +416,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       </span>
 
                       {app.status === 'scheduled' && (
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5">
                           <button
                             onClick={() => setCompletingApp(app)}
-                            className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-1"
+                            className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1 active:scale-95"
                           >
-                            <CheckCircle className="w-3.5 h-3.5" />
+                            <CheckCircle className="w-3 h-3" />
                             Finalizar
                           </button>
                           <button
                             onClick={() => setAppointments(prev => prev.map(a => a.id === app.id ? { ...a, status: 'canceled' } : a))}
-                            className="px-2.5 py-1.5 bg-slate-800 hover:bg-rose-950 hover:text-rose-400 text-slate-400 rounded-xl text-xs font-medium transition-colors"
+                            className="px-2 py-1 bg-slate-800 hover:bg-rose-950 hover:text-rose-400 text-slate-400 rounded-lg text-xs font-medium transition-colors"
                           >
                             Cancelar
                           </button>
@@ -407,21 +441,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
-      {/* MODAL CONCLUIR ATENDIMENTO (PAGAMENTO) */}
+      {/* MODAL CONCLUIR ATENDIMENTO (BOTTOM SHEET NO CELULAR) */}
       {completingApp && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl animate-fadeIn">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-t-3xl sm:rounded-3xl max-w-md w-full p-5 sm:p-6 space-y-4 shadow-2xl animate-fadeIn max-h-[85vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b border-slate-800 pb-3">
               <h3 className="text-base font-bold text-white flex items-center gap-2">
                 <CheckCircle className="w-5 h-5 text-emerald-400" />
                 Concluir Atendimento
               </h3>
-              <button onClick={() => setCompletingApp(null)} className="text-slate-400 hover:text-white">
+              <button onClick={() => setCompletingApp(null)} className="text-slate-400 hover:text-white p-1">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-xs space-y-2">
+            <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800 text-xs space-y-2">
               <p><span className="text-slate-400">Cliente:</span> <strong className="text-white">{completingApp.client_name}</strong></p>
               <p><span className="text-slate-400">Profissional:</span> <strong className="text-white">{completingApp.barber_name}</strong></p>
               
@@ -453,7 +487,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <label className="block text-xs font-semibold text-slate-300 mb-2">
                   Forma de Pagamento
                 </label>
-                <div className="grid grid-cols-2 gap-2.5">
+                <div className="grid grid-cols-2 gap-2">
                   {[
                     { id: 'pix', label: 'Pix', icon: QrCode },
                     { id: 'credit', label: 'Cartão Crédito', icon: CreditCard },
@@ -466,7 +500,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         key={m.id}
                         type="button"
                         onClick={() => setPaymentMethod(m.id as any)}
-                        className={`p-3 rounded-xl text-xs font-semibold border flex items-center gap-2 transition-all ${
+                        className={`p-2.5 rounded-xl text-xs font-semibold border flex items-center gap-2 transition-all ${
                           paymentMethod === m.id
                             ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
                             : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
@@ -482,21 +516,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
               <button
                 type="submit"
-                className="w-full py-3.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-sm transition-all shadow-lg shadow-emerald-500/10"
+                className="w-full py-3.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-sm transition-all shadow-lg shadow-emerald-500/10 active:scale-98"
               >
-                Confirmar Recebimento e Concluir
+                Confirmar e Concluir
               </button>
             </form>
           </div>
         </div>
       )}
 
-      {/* MODAL NOVO ATENDIMENTO (MÚLTIPLOS SERVIÇOS) */}
+      {/* MODAL NOVO ATENDIMENTO (BOTTOM SHEET NO CELULAR) */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl animate-fadeIn max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-t-3xl sm:rounded-3xl max-w-lg w-full p-5 sm:p-6 space-y-4 shadow-2xl animate-fadeIn max-h-[88vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b border-slate-800 pb-3">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+              <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
                 <Plus className="w-5 h-5 text-emerald-400" />
                 Novo Atendimento
               </h3>
@@ -508,7 +542,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </button>
             </div>
 
-            <form onSubmit={handleCreateAppointment} className="space-y-4">
+            {modalError && (
+              <div className="p-3 bg-rose-950/40 border border-rose-800/60 rounded-xl text-rose-300 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                <span>{modalError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleCreateAppointment} className="space-y-3.5">
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">
                   Nome do Cliente *
@@ -540,16 +581,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <div>
                 <div className="flex justify-between items-center mb-1.5">
                   <label className="block text-xs font-semibold text-slate-300">
-                    Selecione os Serviços * ({selectedServiceIds.length} selecionado(s))
+                    Serviços * ({selectedServiceIds.length} selecionado(s))
                   </label>
                   {modalTotalPrice > 0 && (
                     <span className="text-xs text-emerald-400 font-bold font-mono">
-                      Total: R$ {modalTotalPrice.toFixed(2)} ({modalTotalDuration} min)
+                      R$ {modalTotalPrice.toFixed(2)} ({modalTotalDuration} min)
                     </span>
                   )}
                 </div>
 
-                <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
                   {services.map((s) => {
                     const isChecked = selectedServiceIds.includes(s.id);
                     return (
@@ -569,7 +610,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                             <Check className="w-3 h-3 stroke-[3]" />
                           </div>
                           <span className="font-semibold">{s.name}</span>
-                          <span className="text-[10px] text-slate-500">({s.duration_minutes} min)</span>
+                          <span className="text-[10px] text-slate-500">({s.duration_minutes}m)</span>
                         </div>
                         <span className="font-mono font-bold text-emerald-400">R$ {s.price.toFixed(2)}</span>
                       </div>
@@ -578,7 +619,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2.5">
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1">
                     Barbeiro *
@@ -586,7 +627,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   <select
                     value={selectedBarberId}
                     onChange={(e) => setSelectedBarberId(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white focus:border-emerald-500 focus:outline-none"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white focus:border-emerald-500 focus:outline-none"
                   >
                     {barbers.map((b) => (
                       <option key={b.id} value={b.id}>
@@ -605,7 +646,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     required
                     value={startTime}
                     onChange={(e) => setStartTime(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white focus:border-emerald-500 focus:outline-none font-mono"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white focus:border-emerald-500 focus:outline-none font-mono"
                   />
                 </div>
               </div>
@@ -614,7 +655,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
-                  className="px-4 py-2 bg-slate-800 text-slate-300 rounded-xl text-xs font-medium hover:bg-slate-700 transition-colors"
+                  className="px-4 py-2 bg-slate-800 text-slate-300 rounded-xl text-xs font-medium"
                 >
                   Cancelar
                 </button>

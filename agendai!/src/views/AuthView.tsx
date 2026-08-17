@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   Building2, Scissors, LogIn, UserPlus, Lock, 
-  Mail, Phone, Sparkles, ArrowRight, ShieldCheck, User
+  Mail, Phone, Sparkles, ArrowRight, ShieldCheck, User, Smartphone, Upload, Check
 } from 'lucide-react';
 import { Organization } from '../types';
 import { INITIAL_ORG, INITIAL_SERVICES, INITIAL_BARBERS, INITIAL_APPOINTMENTS, INITIAL_CLIENTS } from '../data/mockData';
@@ -39,6 +39,10 @@ export const AuthView: React.FC<AuthViewProps> = ({
   const [phone, setPhone] = useState('');
   const [slug, setSlug] = useState('');
 
+  // Sync Import modal
+  const [showImportSync, setShowImportSync] = useState(false);
+  const [syncCode, setSyncCode] = useState('');
+
   const generateSlug = (name: string) => {
     return name
       .toLowerCase()
@@ -69,10 +73,8 @@ export const AuthView: React.FC<AuthViewProps> = ({
     if (found) {
       onLogin(found);
     } else if (savedOrganizations.length > 0) {
-      // Se tiver uma salva, entra nela ou avisa
       onLogin(savedOrganizations[0]);
     } else {
-      // Se não houver, autentica com a demonstração ou cria a conta
       onLogin({
         ...INITIAL_ORG,
         email: loginEmail || 'admin@barbearia.com',
@@ -100,17 +102,39 @@ export const AuthView: React.FC<AuthViewProps> = ({
     onRegister(newOrg);
   };
 
+  const handleImportSyncCode = () => {
+    try {
+      let rawJson = syncCode.trim();
+      if (rawJson.includes('sync_data=')) {
+        const queryPart = rawJson.split('sync_data=')[1].split('&')[0];
+        rawJson = decodeURIComponent(queryPart);
+      }
+      const parsed = JSON.parse(rawJson);
+      if (parsed.org) localStorage.setItem('agendai_current_org', JSON.stringify(parsed.org));
+      if (parsed.savedOrgs) localStorage.setItem('agendai_all_orgs', JSON.stringify(parsed.savedOrgs));
+      if (parsed.services) localStorage.setItem('agendai_services', JSON.stringify(parsed.services));
+      if (parsed.barbers) localStorage.setItem('agendai_barbers', JSON.stringify(parsed.barbers));
+      if (parsed.appointments) localStorage.setItem('agendai_appointments', JSON.stringify(parsed.appointments));
+      if (parsed.clients) localStorage.setItem('agendai_clients', JSON.stringify(parsed.clients));
+      localStorage.setItem('agendai_session_active', 'true');
+      alert('✅ Dados sincronizados com sucesso neste dispositivo!');
+      window.location.reload();
+    } catch {
+      alert('❌ Código de sincronização inválido. Certifique-se de colar o link ou o código copiado do outro aparelho.');
+    }
+  };
+
   return (
-    <div className="w-full max-w-md mx-auto py-6 sm:py-10 animate-fadeIn">
-      <div className="bg-[#121B2E] border border-slate-800 rounded-3xl p-6 sm:p-8 space-y-6 shadow-2xl">
+    <div className="w-full max-w-md mx-auto py-4 sm:py-10 animate-fadeIn px-2 sm:px-0">
+      <div className="bg-[#121B2E] border border-slate-800 rounded-3xl p-5 sm:p-8 space-y-5 sm:space-y-6 shadow-2xl">
         {/* LOGO E CABEÇALHO */}
-        <div className="text-center space-y-2">
-          <div className="w-14 h-14 bg-emerald-500/20 text-emerald-400 rounded-2xl flex items-center justify-center mx-auto border border-emerald-500/30 shadow-lg shadow-emerald-500/10">
-            <Scissors className="w-7 h-7" />
+        <div className="text-center space-y-1.5">
+          <div className="w-13 h-13 sm:w-14 sm:h-14 bg-emerald-500/20 text-emerald-400 rounded-2xl flex items-center justify-center mx-auto border border-emerald-500/30 shadow-lg shadow-emerald-500/10">
+            <Scissors className="w-6 h-6 sm:w-7 sm:h-7" />
           </div>
           <h2 className="text-2xl font-bold text-white tracking-tight">AgendAI</h2>
           <p className="text-xs text-slate-400">
-            Plataforma de Gestão e Agendamento para Barbearias
+            Gestão & Agendamento para Barbearias
           </p>
         </div>
 
@@ -154,7 +178,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                     <div
                       key={o.id}
                       onClick={() => onLogin(o)}
-                      className="p-2.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-700/60 cursor-pointer flex items-center justify-between transition-colors group"
+                      className="p-2.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-700/60 cursor-pointer flex items-center justify-between transition-colors group active:scale-98"
                     >
                       <div className="flex items-center gap-2.5 overflow-hidden">
                         <Building2 className="w-4 h-4 text-emerald-400 shrink-0" />
@@ -206,7 +230,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
 
             <button
               type="submit"
-              className="w-full py-3.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-sm transition-all shadow-lg shadow-emerald-500/10 flex items-center justify-center gap-2"
+              className="w-full py-3.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-sm transition-all shadow-lg shadow-emerald-500/10 flex items-center justify-center gap-2 active:scale-98"
             >
               <LogIn className="w-4 h-4" />
               Acessar Painel
@@ -303,16 +327,51 @@ export const AuthView: React.FC<AuthViewProps> = ({
 
             <button
               type="submit"
-              className="w-full py-3.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-sm transition-all shadow-lg shadow-emerald-500/10 mt-2"
+              className="w-full py-3.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-sm transition-all shadow-lg shadow-emerald-500/10 mt-2 active:scale-98"
             >
               Criar Conta e Entrar
             </button>
           </form>
         )}
 
+        {/* OPÇÃO DE SINCRONIZAÇÃO / IMPORTAR DO COMPUTADOR */}
+        <div className="pt-3 border-t border-slate-800 space-y-2 text-center">
+          <button
+            type="button"
+            onClick={() => setShowImportSync(!showImportSync)}
+            className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-emerald-400 transition-colors"
+          >
+            <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
+            <span>{showImportSync ? 'Ocultar importação' : 'Já tem dados no computador? Importar aqui'}</span>
+          </button>
+
+          {showImportSync && (
+            <div className="p-3 bg-[#0B1120] rounded-2xl border border-slate-800 space-y-2 text-left animate-fadeIn">
+              <label className="block text-[11px] text-slate-400">
+                Cole o link ou código de sincronização gerado no seu computador:
+              </label>
+              <input
+                type="text"
+                value={syncCode}
+                onChange={(e) => setSyncCode(e.target.value)}
+                placeholder="Cole o link ou código aqui..."
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none font-mono"
+              />
+              <button
+                type="button"
+                onClick={handleImportSyncCode}
+                className="w-full py-2 bg-emerald-500 text-slate-950 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                Importar e Entrar no Painel
+              </button>
+            </div>
+          )}
+        </div>
+
         {/* DEMO BUTTON */}
-        <div className="pt-4 border-t border-slate-800/80 text-center">
-          <p className="text-[11px] text-slate-500 mb-2">Quer apenas testar a plataforma?</p>
+        <div className="pt-2 border-t border-slate-800/80 text-center">
+          <p className="text-[11px] text-slate-500 mb-1.5">Quer apenas testar a plataforma?</p>
           <button
             type="button"
             onClick={() => {

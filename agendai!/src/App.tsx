@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { 
   TabType, 
   Organization, 
@@ -8,6 +8,7 @@ import {
   Client
 } from './types';
 import { Sidebar } from './components/layout/Sidebar';
+import { BottomNav } from './components/layout/BottomNav';
 import { Header } from './components/layout/Header';
 import { DashboardView } from './views/DashboardView';
 import { AtendimentosView } from './views/AtendimentosView';
@@ -24,7 +25,7 @@ import {
   INITIAL_APPOINTMENTS,
   INITIAL_CLIENTS
 } from './data/mockData';
-import { Bell, Calendar, CheckCircle2, Clock, Sparkles, User, X } from 'lucide-react';
+import { Bell, Calendar, CheckCircle2, Clock, Sparkles, User, X, Smartphone, QrCode, Copy, Check, Share2, ArrowRight } from 'lucide-react';
 
 const STORAGE_KEYS = {
   CURRENT_ORG: 'agendai_current_org',
@@ -37,6 +38,13 @@ const STORAGE_KEYS = {
 };
 
 const SYNC_CHANNEL_NAME = 'agendai_realtime_sync';
+
+// Converte horário 'HH:mm' para minutos a partir da meia-noite
+const timeToMinutes = (timeStr: string): number => {
+  if (!timeStr) return 0;
+  const [h, m] = timeStr.split(':').map(Number);
+  return (h || 0) * 60 + (m || 0);
+};
 
 // Função para tocar som suave de notificação de novo agendamento
 const playNotificationSound = () => {
@@ -145,6 +153,8 @@ export default function App() {
 
   const [currentTab, setCurrentTab] = useState<TabType>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [showSyncModal, setShowSyncModal] = useState(false);
+  const [copiedSyncLink, setCopiedSyncLink] = useState(false);
 
   // Notificação Toast em tempo real de novos agendamentos
   const [toastNotification, setToastNotification] = useState<{
@@ -158,6 +168,51 @@ export default function App() {
   } | null>(null);
 
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
+
+  // 1. SINCRONIZAÇÃO AUTOMÁTICA DE DADOS VIA LINK DE CELULAR (?sync_data=...)
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const syncPayload = params.get('sync_data');
+      if (syncPayload) {
+        const decoded = JSON.parse(decodeURIComponent(syncPayload));
+        if (decoded.org) {
+          setOrg(decoded.org);
+          localStorage.setItem(STORAGE_KEYS.CURRENT_ORG, JSON.stringify(decoded.org));
+        }
+        if (decoded.savedOrgs && Array.isArray(decoded.savedOrgs)) {
+          setSavedOrgs(decoded.savedOrgs);
+          localStorage.setItem(STORAGE_KEYS.ALL_ORGS, JSON.stringify(decoded.savedOrgs));
+        }
+        if (decoded.services && Array.isArray(decoded.services)) {
+          setServices(decoded.services);
+          localStorage.setItem(STORAGE_KEYS.SERVICES, JSON.stringify(decoded.services));
+        }
+        if (decoded.barbers && Array.isArray(decoded.barbers)) {
+          setBarbers(decoded.barbers);
+          localStorage.setItem(STORAGE_KEYS.BARBERS, JSON.stringify(decoded.barbers));
+        }
+        if (decoded.appointments && Array.isArray(decoded.appointments)) {
+          setAppointments(decoded.appointments);
+          localStorage.setItem(STORAGE_KEYS.APPOINTMENTS, JSON.stringify(decoded.appointments));
+        }
+        if (decoded.clients && Array.isArray(decoded.clients)) {
+          setClients(decoded.clients);
+          localStorage.setItem(STORAGE_KEYS.CLIENTS, JSON.stringify(decoded.clients));
+        }
+        setIsLoggedIn(true);
+        localStorage.setItem(STORAGE_KEYS.AUTH_SESSION, 'true');
+
+        // Limpa parâmetro da URL
+        const cleanUrl = window.location.origin + window.location.pathname + window.location.hash;
+        window.history.replaceState({}, document.title, cleanUrl);
+
+        alert('✅ Barbearia e dados sincronizados com sucesso no seu celular!');
+      }
+    } catch (err) {
+      console.error('Erro ao sincronizar dados via URL:', err);
+    }
+  }, []);
 
   // Monitorar alterações na URL para links diretos
   useEffect(() => {
@@ -324,12 +379,42 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [toastNotification]);
 
+  // Contagem de agendamentos pendentes para badge no app móvel
+  const pendingAppointmentsCount = useMemo(() => {
+    return appointments.filter(a => a.status === 'scheduled').length;
+  }, [appointments]);
+
   // Função central de criação de agendamento (usada pelo cliente e pelo administrador)
   const handleAddAppointment = useCallback((newApp: Omit<Appointment, 'id'>) => {
+    const targetDate = newApp.date || new Date().toISOString().split('T')[0];
+    const duration = newApp.duration_minutes || (newApp.services?.reduce((sum, s) => sum + (s.duration_minutes || 30), 0)) || 30;
+
+    // Verificação de segurança contra agendamentos simultâneos ou duplicados
+    const candidateStart = timeToMinutes(newApp.start_time);
+    const candidateEnd = candidateStart + duration;
+
+    const isConflict = appointments.some(app => {
+      if (app.status === 'canceled') return false;
+      if (app.barber_id !== newApp.barber_id) return false;
+      const appDate = app.date || targetDate;
+      if (appDate !== targetDate) return false;
+
+      const appStart = timeToMinutes(app.start_time);
+      const appDuration = app.duration_minutes || (app.services?.reduce((sum, s) => sum + (s.duration_minutes || 30), 0)) || 30;
+      const appEnd = appStart + appDuration;
+
+      return candidateStart < appEnd && appStart < candidateEnd;
+    });
+
+    if (isConflict) {
+      console.warn('Conflito detectado: O horário selecionado já está ocupado.');
+      return;
+    }
+
     const created: Appointment = {
       ...newApp,
       id: 'app-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
-      date: newApp.date || new Date().toISOString().split('T')[0],
+      date: targetDate,
       created_at: new Date().toISOString(),
       status: newApp.status || 'scheduled',
     };
@@ -385,7 +470,7 @@ export default function App() {
     setToastNotification(created);
 
     return created;
-  }, []);
+  }, [appointments]);
 
   // Atualizar status do agendamento (concluir, cancelar, alterar)
   const handleUpdateAppointment = useCallback((updatedApp: Appointment) => {
@@ -421,7 +506,6 @@ export default function App() {
       return exists ? prev.map(o => o.id === newOrg.id ? newOrg : o) : [newOrg, ...prev];
     });
 
-    // Se não tiver serviços ou barbeiros cadastrados, fornece um conjunto inicial
     if (services.length === 0) {
       const defaultServices = INITIAL_SERVICES.map(s => ({ ...s, org_id: newOrg.id }));
       setServices(defaultServices);
@@ -479,14 +563,35 @@ export default function App() {
     setCurrentTab('auth');
   };
 
+  // Gerar link de sincronização para abrir no celular
+  const generateMobileSyncLink = () => {
+    const payload = {
+      org,
+      savedOrgs,
+      services,
+      barbers,
+      appointments,
+      clients,
+    };
+    const jsonStr = JSON.stringify(payload);
+    return `${window.location.origin}/?sync_data=${encodeURIComponent(jsonStr)}`;
+  };
+
+  const handleCopySyncLink = () => {
+    const link = generateMobileSyncLink();
+    navigator.clipboard.writeText(link);
+    setCopiedSyncLink(true);
+    setTimeout(() => setCopiedSyncLink(false), 2500);
+  };
+
   // Identificar organização correta para o agendamento do cliente (baseado no slug da URL)
   const urlSlug = getSlugFromUrl();
   const currentPublicOrg = (urlSlug ? savedOrgs.find(o => o.slug === urlSlug || o.id === urlSlug) : null) || org || savedOrgs[0] || INITIAL_ORG;
 
-  // 1. ROTA PÚBLICA DE AGENDAMENTO DO CLIENTE
+  // 1. ROTA PÚBLICA DE AGENDAMENTO DO CLIENTE (MOBILE-FIRST)
   if (isClientRoute || currentTab === 'booking') {
     return (
-      <div className="min-h-screen bg-[#070B14] text-slate-100 font-sans p-4 sm:p-6 flex items-center justify-center">
+      <div className="min-h-screen bg-[#070B14] text-slate-100 font-sans p-3 sm:p-6 flex items-center justify-center">
         <TenantBookingView 
           org={currentPublicOrg}
           services={services}
@@ -518,68 +623,57 @@ export default function App() {
     );
   }
 
-  // 3. PAINEL ADMINISTRATIVO INTERNO DA BARBEARIA
+  // 3. PAINEL ADMINISTRATIVO INTERNO DA BARBEARIA (MOBILE-FIRST COM BOTTOM NAV & DESKTOP SIDEBAR)
   return (
     <div className="min-h-screen bg-[#070B14] text-slate-100 font-sans flex flex-col md:flex-row relative">
       {/* TOAST DE NOVO AGENDAMENTO EM TEMPO REAL */}
       {toastNotification && (
-        <div className="fixed top-5 right-5 z-50 max-w-md w-full animate-bounce-short">
-          <div className="bg-gradient-to-r from-emerald-950 to-[#0B1120] border-2 border-emerald-500 rounded-3xl p-4 sm:p-5 shadow-2xl shadow-emerald-500/20 text-white flex items-start justify-between gap-3">
-            <div className="flex items-start gap-3.5">
-              <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
-                <Bell className="w-5 h-5 animate-pulse" />
+        <div className="fixed top-4 left-4 right-4 sm:left-auto sm:right-5 sm:w-96 z-50 animate-bounce-short">
+          <div className="bg-gradient-to-r from-emerald-950 to-[#0B1120] border-2 border-emerald-500 rounded-3xl p-4 shadow-2xl shadow-emerald-500/20 text-white flex items-start justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
+                <Bell className="w-4 h-4 animate-pulse" />
               </div>
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-black uppercase tracking-wider text-emerald-400 bg-emerald-500/20 px-2 py-0.5 rounded-md border border-emerald-500/30">
-                    Novo Agendamento!
-                  </span>
-                </div>
-                <h4 className="font-bold text-white text-sm">
-                  {toastNotification.client_name} agendou um horário
+              <div className="space-y-0.5">
+                <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400 bg-emerald-500/20 px-2 py-0.5 rounded-md border border-emerald-500/30">
+                  Novo Agendamento!
+                </span>
+                <h4 className="font-bold text-white text-xs leading-snug">
+                  {toastNotification.client_name} agendou
                 </h4>
-                <p className="text-xs text-slate-300">
-                  <strong className="text-emerald-400">{toastNotification.service_name}</strong> com <strong className="text-white">{toastNotification.barber_name}</strong>
+                <p className="text-[11px] text-slate-300">
+                  <strong className="text-emerald-400">{toastNotification.service_name}</strong> com {toastNotification.barber_name}
                 </p>
-                <div className="flex items-center gap-3 text-[11px] text-slate-400 pt-1 font-mono">
-                  <span className="flex items-center gap-1">
-                    <Calendar className="w-3 h-3 text-emerald-400" />
-                    {new Date(toastNotification.date + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
-                  </span>
-                  <span className="flex items-center gap-1 font-bold text-emerald-400">
-                    <Clock className="w-3 h-3" />
-                    às {toastNotification.start_time}
-                  </span>
-                  <span>
-                    R$ {toastNotification.price.toFixed(2)}
-                  </span>
+                <div className="flex items-center gap-2 text-[10px] text-slate-400 pt-0.5 font-mono">
+                  <span>{new Date(toastNotification.date + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}</span>
+                  <span className="font-bold text-emerald-400">às {toastNotification.start_time}</span>
+                  <span>R$ {toastNotification.price.toFixed(2)}</span>
                 </div>
               </div>
             </div>
 
-            <div className="flex flex-col items-end gap-2">
+            <div className="flex flex-col items-end gap-1.5 shrink-0">
               <button
                 onClick={() => setToastNotification(null)}
-                className="text-slate-400 hover:text-white p-1 rounded-lg transition-colors"
-                title="Fechar alerta"
+                className="text-slate-400 hover:text-white p-1"
               >
-                <X className="w-4 h-4" />
+                <X className="w-3.5 h-3.5" />
               </button>
               <button
                 onClick={() => {
                   setCurrentTab('agenda');
                   setToastNotification(null);
                 }}
-                className="text-[11px] font-bold text-emerald-400 hover:underline bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20"
+                className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded-lg border border-emerald-500/20"
               >
-                Ver Agenda
+                Ver
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* SIDEBAR DE NAVEGAÇÃO */}
+      {/* SIDEBAR DE NAVEGAÇÃO PARA TELAS MÉDIAS E GRANDES (DESKTOP) */}
       <Sidebar
         currentTab={currentTab}
         setCurrentTab={setCurrentTab}
@@ -589,16 +683,38 @@ export default function App() {
         onLogout={handleLogout}
       />
 
-      {/* ÁREA PRINCIPAL */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-y-auto bg-[#070B14]">
-        {/* Cabeçalho Mobile */}
+      {/* ÁREA PRINCIPAL COM SCROLL E PADDING INFERIOR SEGURO PARA CELULAR */}
+      <main className="flex-1 flex flex-col min-w-0 overflow-y-auto bg-[#070B14] pb-24 md:pb-8">
+        {/* Cabeçalho Smartphone / Desktop */}
         <Header 
           org={org} 
-          onOpenSidebar={() => setIsSidebarOpen(true)} 
+          onOpenSidebar={() => setIsSidebarOpen(true)}
+          onNavigateToBooking={() => setCurrentTab('booking')}
+          pendingAppointmentsCount={pendingAppointmentsCount}
         />
 
+        {/* BOTÃO DE SINCRONIZAÇÃO RÁPIDA ENTRE DISPOSITIVOS NO TOPO */}
+        <div className="px-4 sm:px-6 md:px-8 max-w-7xl w-full mx-auto pt-3">
+          <div className="bg-gradient-to-r from-slate-900 to-[#121B2E] border border-slate-800 rounded-2xl p-3 flex items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2.5 overflow-hidden">
+              <Smartphone className="w-4 h-4 text-emerald-400 shrink-0" />
+              <div className="truncate">
+                <span className="text-white font-semibold block sm:inline">Usando no Computador ou Celular? </span>
+                <span className="text-slate-400 text-[11px]">Transfira seus dados para o outro aparelho com 1 clique.</span>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowSyncModal(true)}
+              className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1.5 transition-all shrink-0 shadow-sm"
+            >
+              <Share2 className="w-3 h-3" />
+              <span className="hidden sm:inline">Sincronizar</span> Celular
+            </button>
+          </div>
+        </div>
+
         {/* CONTEÚDO DA ABA ATIVA */}
-        <div className="flex-1 p-4 sm:p-6 md:p-8 max-w-7xl w-full mx-auto">
+        <div className="flex-1 p-3 sm:p-6 md:p-8 max-w-7xl w-full mx-auto">
           {currentTab === 'dashboard' && (
             <DashboardView 
               appointments={appointments}
@@ -659,6 +775,62 @@ export default function App() {
           )}
         </div>
       </main>
+
+      {/* BARRA DE NAVEGAÇÃO INFERIOR PARA SMARTPHONE (APP STYLE) */}
+      <BottomNav
+        currentTab={currentTab}
+        setCurrentTab={setCurrentTab}
+        pendingCount={pendingAppointmentsCount}
+      />
+
+      {/* MODAL DE SINCRONIZAÇÃO ENTRE DISPOSITIVOS (COMPUTADOR <-> CELULAR) */}
+      {showSyncModal && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#121B2E] border border-slate-800 rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl animate-fadeIn max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Smartphone className="w-5 h-5 text-emerald-400" />
+                Sincronizar com seu Celular
+              </h3>
+              <button onClick={() => setShowSyncModal(false)} className="text-slate-400 hover:text-white p-1">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs text-slate-300">
+              <p>
+                Como este sistema funciona de forma rápida e segura direto no seu navegador, você pode transferir todos os seus dados cadastrados (barbearia, barbeiros, serviços e agendamentos) para o celular através do link de sincronização abaixo:
+              </p>
+
+              <div className="bg-[#0B1120] p-4 rounded-2xl border border-slate-800 space-y-2">
+                <span className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider block">
+                  Instruções Rápidas:
+                </span>
+                <ol className="list-decimal list-inside space-y-1.5 text-slate-300">
+                  <li>Clique no botão <strong>"Copiar Link para Celular"</strong> abaixo.</li>
+                  <li>Envie este link para você mesmo no seu WhatsApp.</li>
+                  <li>Abra o link no celular: <strong>todos os seus dados carregarão automaticamente</strong>!</li>
+                </ol>
+              </div>
+
+              <div className="space-y-2 pt-2">
+                <button
+                  type="button"
+                  onClick={handleCopySyncLink}
+                  className="w-full py-3.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-2xl text-xs flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-500/20 active:scale-98"
+                >
+                  {copiedSyncLink ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  {copiedSyncLink ? 'Link Copiado para a Área de Transferência!' : 'Copiar Link de Sincronização'}
+                </button>
+
+                <p className="text-[10px] text-slate-500 text-center">
+                  O link contém todos os seus dados atuais criptografados de forma segura na URL.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

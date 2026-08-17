@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { 
   Calendar as CalendarIcon, ChevronLeft, ChevronRight, 
   Clock, User, Scissors, Plus, CheckCircle, AlertCircle,
-  Phone, MessageSquare, Check, X, DollarSign, QrCode, CreditCard, Banknote
+  Phone, MessageSquare, Check, X, DollarSign, QrCode, CreditCard, Banknote, Lock
 } from 'lucide-react';
 import { Appointment, Barber, Service } from '../types';
 
@@ -12,6 +12,39 @@ interface AgendaViewProps {
   barbers: Barber[];
   services: Service[];
 }
+
+const timeToMinutes = (timeStr: string): number => {
+  if (!timeStr) return 0;
+  const [h, m] = timeStr.split(':').map(Number);
+  return (h || 0) * 60 + (m || 0);
+};
+
+const isTimeSlotOccupied = (
+  slotTime: string,
+  candidateDurationMinutes: number,
+  barberId: string,
+  dateStr: string,
+  allAppointments: Appointment[],
+  excludeAppointmentId?: string
+): boolean => {
+  const candidateStart = timeToMinutes(slotTime);
+  const candidateEnd = candidateStart + (candidateDurationMinutes || 30);
+
+  return allAppointments.some(app => {
+    if (excludeAppointmentId && app.id === excludeAppointmentId) return false;
+    if (app.status === 'canceled') return false;
+    if (app.barber_id !== barberId) return false;
+
+    const appDate = app.date || dateStr;
+    if (appDate !== dateStr) return false;
+
+    const appStart = timeToMinutes(app.start_time);
+    const appDuration = app.duration_minutes || (app.services?.reduce((sum, s) => sum + (s.duration_minutes || 30), 0)) || 30;
+    const appEnd = appStart + appDuration;
+
+    return candidateStart < appEnd && appStart < candidateEnd;
+  });
+};
 
 export const AgendaView: React.FC<AgendaViewProps> = ({
   appointments,
@@ -34,6 +67,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
   const [clientPhone, setClientPhone] = useState('');
   const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
   const [barberId, setBarberId] = useState(barbers[0]?.id || '');
+  const [addModalError, setAddModalError] = useState('');
 
   const slots = useMemo(() => {
     const list: string[] = [];
@@ -106,10 +140,26 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
 
   const handleCreateAppointment = (e: React.FormEvent) => {
     e.preventDefault();
+    setAddModalError('');
+
     if (!clientName.trim() || selectedServiceIds.length === 0) return;
 
     const brb = barbers.find(b => b.id === barberId) || barbers[0];
     if (!brb) return;
+
+    // VERIFICAÇÃO DE HORÁRIO OCUPADO
+    const occupied = isTimeSlotOccupied(
+      modalTime,
+      modalTotalDuration,
+      brb.id,
+      selectedDate,
+      appointments
+    );
+
+    if (occupied) {
+      setAddModalError(`O horário das ${modalTime} já está ocupado ou colide com outro agendamento para ${brb.full_name}.`);
+      return;
+    }
 
     const joinedNames = modalSelectedServices.map(s => s.name).join(' + ');
 
@@ -151,26 +201,26 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
   };
 
   return (
-    <div className="space-y-6 animate-fadeIn">
+    <div className="space-y-4 sm:space-y-6 animate-fadeIn">
       {/* CABEÇALHO DA AGENDA */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#121B2E] p-6 rounded-3xl border border-slate-800">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 bg-[#121B2E] p-4 sm:p-6 rounded-3xl border border-slate-800">
         <div>
-          <h2 className="text-2xl font-bold text-white tracking-tight flex items-center gap-2.5">
-            <CalendarIcon className="w-6 h-6 text-emerald-400" />
+          <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight flex items-center gap-2">
+            <CalendarIcon className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-400" />
             Agenda Completa
           </h2>
-          <p className="text-sm text-slate-400 mt-1 capitalize">
+          <p className="text-xs sm:text-sm text-slate-400 mt-0.5 capitalize">
             {formattedDateTitle}
           </p>
         </div>
 
         {/* CONTROLES DE DATA E PROFISSIONAL */}
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           {/* Seletor de Barbeiro */}
           <select
             value={selectedBarberId}
             onChange={(e) => setSelectedBarberId(e.target.value)}
-            className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none cursor-pointer"
+            className="bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 sm:px-3 sm:py-2 text-xs text-white focus:border-emerald-500 focus:outline-none cursor-pointer"
           >
             <option value="all">Todos os Barbeiros</option>
             {barbers.map(b => (
@@ -182,14 +232,14 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
           <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
             <button
               onClick={() => changeDate(-1)}
-              className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+              className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
               title="Dia anterior"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
             <button
               onClick={() => setSelectedDate(new Date().toISOString().split('T')[0])}
-              className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-colors ${
+              className={`px-2 py-1 text-xs font-semibold rounded-lg transition-colors ${
                 selectedDate === new Date().toISOString().split('T')[0]
                   ? 'text-emerald-400 bg-emerald-500/10'
                   : 'text-slate-300 hover:bg-slate-800'
@@ -199,7 +249,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
             </button>
             <button
               onClick={() => changeDate(1)}
-              className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+              className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
               title="Próximo dia"
             >
               <ChevronRight className="w-4 h-4" />
@@ -209,49 +259,57 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
           <button
             onClick={() => {
               setSelectedServiceIds(services[0] ? [services[0].id] : []);
-              setBarberId(barbers[0]?.id || '');
+              setBarberId(selectedBarberId !== 'all' ? selectedBarberId : barbers[0]?.id || '');
               setModalTime('14:00');
+              setAddModalError('');
               setShowAddModal(true);
             }}
-            className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1.5 transition-all shadow-lg shadow-emerald-500/10"
+            className="px-3 py-1.5 sm:px-3.5 sm:py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1 transition-all shadow-sm active:scale-95"
           >
-            <Plus className="w-4 h-4" />
-            Agendar Horário
+            <Plus className="w-3.5 h-3.5" />
+            <span>Agendar</span>
           </button>
         </div>
       </div>
 
       {/* BARRA DE RESUMO DO DIA */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="bg-[#121B2E] p-4 rounded-2xl border border-slate-800">
-          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Agendados no Dia</p>
-          <p className="text-xl font-bold text-white font-mono mt-1">{activeDayAppointments.length}</p>
+      <div className="grid grid-cols-4 gap-2 sm:gap-3">
+        <div className="bg-[#121B2E] p-2.5 sm:p-4 rounded-2xl border border-slate-800 text-center sm:text-left">
+          <p className="text-[9px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-wider truncate">Agendados</p>
+          <p className="text-base sm:text-xl font-bold text-white font-mono mt-0.5 sm:mt-1">{activeDayAppointments.length}</p>
         </div>
-        <div className="bg-[#121B2E] p-4 rounded-2xl border border-slate-800">
-          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Concluídos</p>
-          <p className="text-xl font-bold text-emerald-400 font-mono mt-1">{completedDayAppointments.length}</p>
+        <div className="bg-[#121B2E] p-2.5 sm:p-4 rounded-2xl border border-slate-800 text-center sm:text-left">
+          <p className="text-[9px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-wider truncate">Concluídos</p>
+          <p className="text-base sm:text-xl font-bold text-emerald-400 font-mono mt-0.5 sm:mt-1">{completedDayAppointments.length}</p>
         </div>
-        <div className="bg-[#121B2E] p-4 rounded-2xl border border-slate-800">
-          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Faturamento Previsto</p>
-          <p className="text-xl font-bold text-emerald-400 font-mono mt-1">R$ {dayRevenue.toFixed(2)}</p>
+        <div className="bg-[#121B2E] p-2.5 sm:p-4 rounded-2xl border border-slate-800 text-center sm:text-left">
+          <p className="text-[9px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-wider truncate">Previsto</p>
+          <p className="text-base sm:text-xl font-bold text-emerald-400 font-mono mt-0.5 sm:mt-1">R$ {dayRevenue.toFixed(0)}</p>
         </div>
-        <div className="bg-[#121B2E] p-4 rounded-2xl border border-slate-800">
-          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Horários Livres</p>
-          <p className="text-xl font-bold text-slate-300 font-mono mt-1">{slots.length - activeDayAppointments.length}</p>
+        <div className="bg-[#121B2E] p-2.5 sm:p-4 rounded-2xl border border-slate-800 text-center sm:text-left">
+          <p className="text-[9px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-wider truncate">Livres</p>
+          <p className="text-base sm:text-xl font-bold text-slate-300 font-mono mt-0.5 sm:mt-1">{slots.length - activeDayAppointments.length}</p>
         </div>
       </div>
 
-      {/* GRADE HORÁRIA */}
-      <div className="bg-[#121B2E] border border-slate-800 rounded-3xl p-4 sm:p-6 shadow-xl">
-        <div className="grid grid-cols-1 gap-2.5">
+      {/* GRADE HORÁRIA COM BLOQUEIO COMPLETO DE SOBREPOSIÇÃO */}
+      <div className="bg-[#121B2E] border border-slate-800 rounded-3xl p-3 sm:p-6 shadow-xl">
+        <div className="grid grid-cols-1 gap-2 sm:gap-2.5">
           {slots.map((time) => {
+            const slotStartMin = timeToMinutes(time);
+            const slotEndMin = slotStartMin + 30;
+
             const matchingAppointments = appointments.filter(a => {
               const appDate = a.date || new Date().toISOString().split('T')[0];
-              const matchesDate = appDate === selectedDate;
-              const matchesTime = a.start_time === time;
-              const matchesBarber = selectedBarberId === 'all' || a.barber_id === selectedBarberId;
-              const isNotCanceled = a.status !== 'canceled';
-              return matchesDate && matchesTime && matchesBarber && isNotCanceled;
+              if (appDate !== selectedDate) return false;
+              if (a.status === 'canceled') return false;
+              if (selectedBarberId !== 'all' && a.barber_id !== selectedBarberId) return false;
+
+              const appStart = timeToMinutes(a.start_time);
+              const appDuration = a.duration_minutes || (a.services?.reduce((sum, s) => sum + (s.duration_minutes || 30), 0)) || 30;
+              const appEnd = appStart + appDuration;
+
+              return slotStartMin < appEnd && appStart < slotEndMin;
             });
 
             const isOccupied = matchingAppointments.length > 0;
@@ -259,90 +317,99 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
             return (
               <div
                 key={time}
-                className={`p-3.5 sm:p-4 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                className={`p-3 sm:p-4 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 ${
                   isOccupied
                     ? 'bg-slate-900 border-slate-700 shadow-sm'
                     : 'bg-[#0B1120]/60 border-slate-800/60 opacity-80 hover:opacity-100 hover:border-slate-700'
                 }`}
               >
-                <div className="flex items-center gap-4 flex-1">
-                  <div className="w-16 text-center shrink-0">
-                    <span className={`text-base font-bold font-mono ${isOccupied ? 'text-emerald-400' : 'text-slate-500'}`}>
+                <div className="flex items-center gap-3 sm:gap-4 flex-1">
+                  <div className="w-14 sm:w-16 text-center shrink-0">
+                    <span className={`text-sm sm:text-base font-bold font-mono ${isOccupied ? 'text-emerald-400' : 'text-slate-500'}`}>
                       {time}
                     </span>
                   </div>
 
                   {isOccupied ? (
-                    <div className="space-y-2 flex-1">
-                      {matchingAppointments.map(app => (
-                        <div key={app.id} className="flex flex-wrap items-center justify-between gap-2">
-                          <div className="space-y-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="font-bold text-white text-sm">{app.client_name}</span>
+                    <div className="space-y-1.5 flex-1 min-w-0">
+                      {matchingAppointments.map(app => {
+                        const isOriginalStart = app.start_time === time;
 
-                              {/* LISTA DE SERVIÇOS DO AGENDAMENTO */}
-                              {app.services && app.services.length > 0 ? (
-                                app.services.map((srv, idx) => (
-                                  <span key={idx} className="text-xs text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20 font-medium">
-                                    {srv.name}
+                        return (
+                          <div key={app.id} className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="space-y-0.5 min-w-0">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="font-bold text-white text-xs sm:text-sm truncate">{app.client_name}</span>
+
+                                {!isOriginalStart && (
+                                  <span className="text-[9px] bg-slate-800 text-slate-400 px-1.5 py-0.2 rounded font-mono">
+                                    Início {app.start_time}
                                   </span>
-                                ))
-                              ) : (
-                                <span className="text-xs text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20 font-medium">
-                                  {app.service_name}
+                                )}
+
+                                {app.services && app.services.length > 0 ? (
+                                  app.services.map((srv, idx) => (
+                                    <span key={idx} className="text-[10px] text-emerald-400 bg-emerald-500/10 px-1.5 py-0.2 rounded border border-emerald-500/20 font-medium">
+                                      {srv.name}
+                                    </span>
+                                  ))
+                                ) : (
+                                  <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-1.5 py-0.2 rounded border border-emerald-500/20 font-medium">
+                                    {app.service_name}
+                                  </span>
+                                )}
+
+                                <span className="text-[11px] text-white font-mono font-bold">
+                                  R$ {app.price.toFixed(2)}
                                 </span>
-                              )}
+                              </div>
 
-                              <span className="text-xs text-white font-mono font-bold">
-                                R$ {app.price.toFixed(2)}
-                              </span>
+                              <div className="flex flex-wrap items-center gap-2 text-[10px] sm:text-xs text-slate-400">
+                                <span>Barbeiro: <strong className="text-slate-200">{app.barber_name}</strong></span>
+                                {app.client_phone && (
+                                  <a
+                                    href={getWhatsAppDirect(app.client_phone, app.client_name, app.start_time)}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 text-[10px] text-emerald-400 hover:underline bg-emerald-500/10 px-1.5 py-0.2 rounded"
+                                  >
+                                    <MessageSquare className="w-2.5 h-2.5" />
+                                    WhatsApp
+                                  </a>
+                                )}
+                              </div>
                             </div>
 
-                            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
-                              <span>Barbeiro: <strong className="text-slate-200">{app.barber_name}</strong></span>
-                              {app.client_phone && (
-                                <a
-                                  href={getWhatsAppDirect(app.client_phone, app.client_name, app.start_time)}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1 text-[11px] text-emerald-400 hover:underline bg-emerald-500/10 px-2 py-0.5 rounded-md"
-                                >
-                                  <MessageSquare className="w-3 h-3" />
-                                  {app.client_phone}
-                                </a>
-                              )}
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-2 shrink-0">
-                            <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
-                              app.status === 'completed' 
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <span className={`px-2 py-0.5 rounded-full text-[9px] sm:text-[11px] font-semibold ${
+                                app.status === 'completed' 
                                 ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
                                 : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
-                            }`}>
-                              {app.status === 'completed' ? 'Concluído' : 'Agendado'}
-                            </span>
+                              }`}>
+                                {app.status === 'completed' ? 'Concluído' : 'Ocupado'}
+                              </span>
 
-                            {app.status === 'scheduled' && (
-                              <div className="flex items-center gap-1.5">
-                                <button
-                                  onClick={() => setCompletingApp(app)}
-                                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1"
-                                >
-                                  <CheckCircle className="w-3 h-3" />
-                                  Concluir
-                                </button>
-                                <button
-                                  onClick={() => setAppointments(prev => prev.map(a => a.id === app.id ? { ...a, status: 'canceled' } : a))}
-                                  className="px-2 py-1 bg-slate-800 hover:bg-rose-950 hover:text-rose-400 text-slate-400 rounded-lg text-xs font-medium transition-colors"
-                                >
-                                  Cancelar
-                                </button>
-                              </div>
-                            )}
+                              {app.status === 'scheduled' && isOriginalStart && (
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    onClick={() => setCompletingApp(app)}
+                                    className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[11px] font-bold transition-colors flex items-center gap-1 active:scale-95"
+                                  >
+                                    <CheckCircle className="w-3 h-3" />
+                                    Concluir
+                                  </button>
+                                  <button
+                                    onClick={() => setAppointments(prev => prev.map(a => a.id === app.id ? { ...a, status: 'canceled' } : a))}
+                                    className="px-1.5 py-0.5 bg-slate-800 hover:bg-rose-950 hover:text-rose-400 text-slate-400 rounded-lg text-[11px] font-medium transition-colors"
+                                  >
+                                    Cancelar
+                                  </button>
+                                </div>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   ) : (
                     <button
@@ -350,18 +417,19 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                         setModalTime(time);
                         setSelectedServiceIds(services[0] ? [services[0].id] : []);
                         setBarberId(selectedBarberId !== 'all' ? selectedBarberId : barbers[0]?.id || '');
+                        setAddModalError('');
                         setShowAddModal(true);
                       }}
-                      className="text-xs text-slate-500 hover:text-emerald-400 font-medium flex items-center gap-1.5 transition-colors group cursor-pointer"
+                      className="text-xs text-slate-500 hover:text-emerald-400 font-medium flex items-center gap-1.5 transition-colors group cursor-pointer py-1"
                     >
                       <span className="w-2 h-2 rounded-full bg-slate-700 group-hover:bg-emerald-500 transition-colors" />
-                      Horário Disponível — <span className="underline opacity-0 group-hover:opacity-100 transition-opacity">Clique para agendar</span>
+                      Disponível — <span className="underline opacity-60 group-hover:opacity-100 transition-opacity">Agendar</span>
                     </button>
                   )}
                 </div>
 
                 {!isOccupied && (
-                  <span className="text-[11px] text-slate-500 font-mono hidden sm:inline">
+                  <span className="text-[10px] text-slate-500 font-mono hidden sm:inline">
                     Livre
                   </span>
                 )}
@@ -371,21 +439,21 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
         </div>
       </div>
 
-      {/* MODAL CONCLUIR ATENDIMENTO (PAGAMENTO) */}
+      {/* MODAL CONCLUIR ATENDIMENTO (BOTTOM SHEET NO CELULAR) */}
       {completingApp && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl animate-fadeIn">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-t-3xl sm:rounded-3xl max-w-md w-full p-5 sm:p-6 space-y-4 shadow-2xl animate-fadeIn max-h-[85vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b border-slate-800 pb-3">
               <h3 className="text-base font-bold text-white flex items-center gap-2">
                 <CheckCircle className="w-5 h-5 text-emerald-400" />
                 Concluir Atendimento
               </h3>
-              <button onClick={() => setCompletingApp(null)} className="text-slate-400 hover:text-white">
+              <button onClick={() => setCompletingApp(null)} className="text-slate-400 hover:text-white p-1">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-xs space-y-2">
+            <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800 text-xs space-y-2">
               <p><span className="text-slate-400">Cliente:</span> <strong className="text-white">{completingApp.client_name}</strong></p>
               <p><span className="text-slate-400">Profissional:</span> <strong className="text-white">{completingApp.barber_name}</strong></p>
               
@@ -417,7 +485,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                 <label className="block text-xs font-semibold text-slate-300 mb-2">
                   Forma de Pagamento
                 </label>
-                <div className="grid grid-cols-2 gap-2.5">
+                <div className="grid grid-cols-2 gap-2">
                   {[
                     { id: 'pix', label: 'Pix', icon: QrCode },
                     { id: 'credit', label: 'Cartão Crédito', icon: CreditCard },
@@ -430,7 +498,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                         key={m.id}
                         type="button"
                         onClick={() => setPaymentMethod(m.id as any)}
-                        className={`p-3 rounded-xl text-xs font-semibold border flex items-center gap-2 transition-all ${
+                        className={`p-2.5 rounded-xl text-xs font-semibold border flex items-center gap-2 transition-all ${
                           paymentMethod === m.id
                             ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
                             : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
@@ -446,28 +514,35 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
 
               <button
                 type="submit"
-                className="w-full py-3.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-sm transition-all shadow-lg shadow-emerald-500/10"
+                className="w-full py-3.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-sm transition-all shadow-lg shadow-emerald-500/10 active:scale-98"
               >
-                Confirmar Recebimento e Concluir
+                Confirmar Recebimento
               </button>
             </form>
           </div>
         </div>
       )}
 
-      {/* MODAL NOVO AGENDAMENTO (MÚLTIPLOS SERVIÇOS) */}
+      {/* MODAL NOVO AGENDAMENTO (BOTTOM SHEET NO CELULAR) */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl animate-fadeIn max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-t-3xl sm:rounded-3xl max-w-lg w-full p-5 sm:p-6 space-y-4 shadow-2xl animate-fadeIn max-h-[88vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b border-slate-800 pb-3">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+              <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
                 <Plus className="w-5 h-5 text-emerald-400" />
-                Agendar Horário ({modalTime})
+                Agendar ({modalTime})
               </h3>
-              <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-white">
+              <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-white p-1">
                 <X className="w-5 h-5" />
               </button>
             </div>
+
+            {addModalError && (
+              <div className="p-3 bg-rose-950/40 border border-rose-800/60 rounded-xl text-rose-300 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                <span>{addModalError}</span>
+              </div>
+            )}
 
             <form onSubmit={handleCreateAppointment} className="space-y-3.5">
               <div>
@@ -497,16 +572,16 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
               <div>
                 <div className="flex justify-between items-center mb-1.5">
                   <label className="block text-xs font-semibold text-slate-300">
-                    Selecione os Serviços * ({selectedServiceIds.length} selecionado(s))
+                    Serviços * ({selectedServiceIds.length} selecionado(s))
                   </label>
                   {modalTotalPrice > 0 && (
                     <span className="text-xs text-emerald-400 font-bold font-mono">
-                      Total: R$ {modalTotalPrice.toFixed(2)} ({modalTotalDuration} min)
+                      R$ {modalTotalPrice.toFixed(2)} ({modalTotalDuration} min)
                     </span>
                   )}
                 </div>
 
-                <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
                   {services.map((s) => {
                     const isChecked = selectedServiceIds.includes(s.id);
                     return (
@@ -526,7 +601,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                             <Check className="w-3 h-3 stroke-[3]" />
                           </div>
                           <span className="font-semibold">{s.name}</span>
-                          <span className="text-[10px] text-slate-500">({s.duration_minutes} min)</span>
+                          <span className="text-[10px] text-slate-500">({s.duration_minutes}m)</span>
                         </div>
                         <span className="font-mono font-bold text-emerald-400">R$ {s.price.toFixed(2)}</span>
                       </div>
@@ -535,13 +610,13 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2.5">
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1">Barbeiro *</label>
                   <select
                     value={barberId}
                     onChange={(e) => setBarberId(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white focus:border-emerald-500 focus:outline-none"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none"
                   >
                     {barbers.map((b) => (
                       <option key={b.id} value={b.id}>{b.full_name} ({b.role})</option>
@@ -556,7 +631,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                     required
                     value={modalTime}
                     onChange={(e) => setModalTime(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white focus:border-emerald-500 focus:outline-none font-mono"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none font-mono"
                   />
                 </div>
               </div>
