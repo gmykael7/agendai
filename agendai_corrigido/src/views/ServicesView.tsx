@@ -1,0 +1,282 @@
+import React, { useState } from 'react';
+import { Scissors, Plus, Clock, Trash2, Edit3, X, CheckCircle, Tag } from 'lucide-react';
+import { Service } from '../types';
+
+interface ServicesViewProps {
+  services: Service[];
+  setServices: React.Dispatch<React.SetStateAction<Service[]>>;
+}
+
+const DEFAULT_CATEGORIES = ['Cabelo', 'Barba', 'Combos', 'Estética', 'Sobrancelha', 'Outros'];
+
+export const ServicesView: React.FC<ServicesViewProps> = ({
+  services,
+  setServices,
+}) => {
+  const [showModal, setShowModal] = useState(false);
+  const [editingService, setEditingService] = useState<Service | null>(null);
+
+  // Form State
+  const [name, setName] = useState('');
+  const [price, setPrice] = useState('');
+  const [duration, setDuration] = useState('30');
+  const [category, setCategory] = useState('Cabelo');
+
+  const openAddModal = () => {
+    setEditingService(null);
+    setName('');
+    setPrice('');
+    setDuration('30');
+    setCategory('Cabelo');
+    setShowModal(true);
+  };
+
+  const openEditModal = (service: Service) => {
+    setEditingService(service);
+    setName(service.name);
+    setPrice(service.price.toString());
+    setDuration(service.duration_minutes.toString());
+    setCategory(service.category);
+    setShowModal(true);
+  };
+
+  const handleSaveService = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim() || !price) return;
+
+    const parsedPrice = parseFloat(price);
+    const parsedDuration = parseInt(duration, 10) || 30;
+
+    if (editingService) {
+      setServices(prev => prev.map(s => s.id === editingService.id ? {
+        ...s,
+        name: name.trim(),
+        price: parsedPrice,
+        duration_minutes: parsedDuration,
+        category: category.trim() || 'Geral',
+      } : s));
+    } else {
+      const newService: Service = {
+        id: 'srv-' + Date.now(),
+        name: name.trim(),
+        price: parsedPrice,
+        duration_minutes: parsedDuration,
+        category: category.trim() || 'Geral',
+        active: true,
+      };
+      setServices(prev => [...prev, newService]);
+    }
+
+    setShowModal(false);
+  };
+
+  const handleDeleteService = (id: string) => {
+    if (window.confirm('Tem certeza que deseja remover este serviço?')) {
+      setServices(prev => prev.filter(s => s.id !== id));
+    }
+  };
+
+  const toggleActive = (id: string) => {
+    setServices(prev => prev.map(s => s.id === id ? { ...s, active: !s.active } : s));
+  };
+
+  return (
+    <div className="space-y-8 animate-fadeIn">
+      {/* CABEÇALHO */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900/60 p-6 rounded-2xl border border-slate-800">
+        <div>
+          <h2 className="text-2xl font-bold text-white tracking-tight flex items-center gap-2.5">
+            <Scissors className="w-6 h-6 text-amber-500" />
+            Catálogo de Serviços
+          </h2>
+          <p className="text-sm text-slate-400 mt-1">
+            Configure os serviços oferecidos, valores e tempos estimados de atendimento.
+          </p>
+        </div>
+        <button
+          onClick={openAddModal}
+          className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-sm flex items-center justify-center gap-2 transition-all shadow-lg shadow-amber-500/10 shrink-0"
+        >
+          <Plus className="w-4 h-4" />
+          Novo Serviço
+        </button>
+      </div>
+
+      {/* LISTA OU EMPTY STATE */}
+      {services.length === 0 ? (
+        <div className="bg-slate-900/60 border border-slate-800 rounded-3xl p-12 text-center max-w-md mx-auto space-y-4">
+          <div className="w-16 h-16 bg-amber-500/10 text-amber-400 rounded-2xl flex items-center justify-center mx-auto border border-amber-500/20">
+            <Scissors className="w-8 h-8" />
+          </div>
+          <div>
+            <h3 className="text-lg font-bold text-white">Nenhum serviço cadastrado</h3>
+            <p className="text-xs text-slate-400 mt-1">
+              Adicione cortes, barba ou combos para começar a receber agendamentos.
+            </p>
+          </div>
+          <button
+            onClick={openAddModal}
+            className="px-5 py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs transition-colors inline-flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            Cadastrar Primeiro Serviço
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {services.map((service) => (
+            <div 
+              key={service.id} 
+              className={`bg-slate-900/80 p-5 rounded-2xl border transition-all flex flex-col justify-between ${
+                service.active ? 'border-slate-800 hover:border-slate-700' : 'border-slate-800/40 opacity-60'
+              }`}
+            >
+              <div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] bg-slate-800 text-amber-400 px-2.5 py-0.5 rounded-full font-medium">
+                    {service.category}
+                  </span>
+                  <button
+                    onClick={() => toggleActive(service.id)}
+                    className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                      service.active ? 'bg-emerald-500/10 text-emerald-400' : 'bg-slate-800 text-slate-500'
+                    }`}
+                  >
+                    {service.active ? 'Ativo' : 'Inativo'}
+                  </button>
+                </div>
+
+                <h4 className="font-bold text-white text-lg mt-2.5">{service.name}</h4>
+
+                <div className="flex items-center gap-4 mt-3 text-xs text-slate-400">
+                  <span className="flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-amber-500" />
+                    {service.duration_minutes} min
+                  </span>
+                  <span className="text-amber-400 font-bold text-base font-mono">
+                    R$ {service.price.toFixed(2)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-4 mt-4 border-t border-slate-800/60">
+                <button
+                  onClick={() => openEditModal(service)}
+                  className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-colors"
+                  title="Editar serviço"
+                >
+                  <Edit3 className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => handleDeleteService(service.id)}
+                  className="p-2 text-slate-500 hover:text-rose-400 hover:bg-slate-800 rounded-xl transition-colors"
+                  title="Excluir serviço"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* MODAL ADICIONAR / EDITAR SERVIÇO */}
+      {showModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl animate-fadeIn">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <Scissors className="w-5 h-5 text-amber-500" />
+                {editingService ? 'Editar Serviço' : 'Adicionar Novo Serviço'}
+              </h3>
+              <button 
+                onClick={() => setShowModal(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveService} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Nome do Serviço *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Ex: Corte Degrade Navalhado"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:border-amber-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Preço (R$) *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    value={price}
+                    onChange={(e) => setPrice(e.target.value)}
+                    placeholder="45.00"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:border-amber-500 focus:outline-none font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Duração (Minutos) *
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    value={duration}
+                    onChange={(e) => setDuration(e.target.value)}
+                    placeholder="30"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:border-amber-500 focus:outline-none font-mono"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Categoria
+                </label>
+                <select
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:border-amber-500 focus:outline-none"
+                >
+                  {DEFAULT_CATEGORIES.map((cat) => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex justify-end gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowModal(false)}
+                  className="px-4 py-2 bg-slate-800 text-slate-300 rounded-xl text-xs font-medium hover:bg-slate-700 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-amber-500 text-slate-950 font-bold rounded-xl text-xs hover:bg-amber-400 transition-colors"
+                >
+                  {editingService ? 'Salvar Alterações' : 'Cadastrar Serviço'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
