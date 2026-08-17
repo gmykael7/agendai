@@ -3,7 +3,7 @@ import { Menu } from 'lucide-react';
 import { Organization } from '../../types';
 
 interface HeaderProps {
-  org: Organization;
+  org: Organization | null;
   onOpenSidebar: () => void;
 }
 
@@ -18,7 +18,9 @@ export const Header: React.FC<HeaderProps> = ({ org, onOpenSidebar }) => {
         >
           <Menu className="w-6 h-6" />
         </button>
-        <span className="font-bold text-white tracking-tight">{org.name}</span>
+        <span className="font-bold text-white tracking-tight">
+          {org ? org.name : 'AgendAI'}
+        </span>
       </div>
       <div className="flex items-center gap-2">
         <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />

@@ -1,14 +1,14 @@
 import React from 'react';
 import { 
   Scissors, Building2, Calendar, Smartphone, 
-  ArrowUpRight, LogOut, X 
+  ArrowUpRight, LogOut, X, Users, Settings, PlusCircle
 } from 'lucide-react';
 import { Organization, TabType } from '../../types';
 
 interface SidebarProps {
   currentTab: TabType;
   setCurrentTab: (tab: TabType) => void;
-  org: Organization;
+  org: Organization | null;
   isSidebarOpen: boolean;
   setIsSidebarOpen: (isOpen: boolean) => void;
 }
@@ -34,7 +34,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
       }`}>
         <div>
-          {/* Logótipo e Nome do SaaS */}
+          {/* Logo e Nome do SaaS */}
           <div className="p-6 border-b border-slate-800/80 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-500 font-bold shadow-lg shadow-amber-500/10">
@@ -55,23 +55,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
 
           {/* Organização Atual */}
-          <div className="p-4 mx-4 my-4 rounded-xl bg-slate-800/50 border border-slate-700/50 flex items-center justify-between">
-            <div className="flex items-center gap-3 overflow-hidden">
-              <Building2 className="w-5 h-5 text-amber-400 shrink-0" />
-              <div className="truncate">
-                <p className="text-sm font-semibold text-white truncate">{org.name}</p>
-                <p className="text-xs text-slate-400 truncate">agend.ai/{org.slug}</p>
+          {org && (
+            <div className="p-4 mx-4 my-4 rounded-2xl bg-slate-800/50 border border-slate-700/50 flex items-center justify-between">
+              <div className="flex items-center gap-3 overflow-hidden">
+                <Building2 className="w-5 h-5 text-amber-400 shrink-0" />
+                <div className="truncate">
+                  <p className="text-sm font-semibold text-white truncate">{org.name}</p>
+                  <p className="text-xs text-slate-400 truncate font-mono">agend.ai/{org.slug}</p>
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           {/* Menu de Navegação */}
-          <nav className="px-4 space-y-1.5">
+          <nav className="px-4 space-y-1.5 mt-2">
             <button
               onClick={() => { setCurrentTab('dashboard'); setIsSidebarOpen(false); }}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
                 currentTab === 'dashboard'
-                  ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20 shadow-sm'
+                  ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20 shadow-sm font-semibold'
                   : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
               }`}
             >
@@ -83,12 +85,36 @@ export const Sidebar: React.FC<SidebarProps> = ({
               onClick={() => { setCurrentTab('services'); setIsSidebarOpen(false); }}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
                 currentTab === 'services'
-                  ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20 shadow-sm'
+                  ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20 shadow-sm font-semibold'
                   : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
               }`}
             >
               <Scissors className="w-5 h-5" />
-              Serviços & Comissões
+              Catálogo de Serviços
+            </button>
+
+            <button
+              onClick={() => { setCurrentTab('team'); setIsSidebarOpen(false); }}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
+                currentTab === 'team'
+                  ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20 shadow-sm font-semibold'
+                  : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
+              }`}
+            >
+              <Users className="w-5 h-5" />
+              Barbeiros & Comissões
+            </button>
+
+            <button
+              onClick={() => { setCurrentTab('settings'); setIsSidebarOpen(false); }}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
+                currentTab === 'settings'
+                  ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20 shadow-sm font-semibold'
+                  : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
+              }`}
+            >
+              <Settings className="w-5 h-5" />
+              Configurações
             </button>
 
             <button
@@ -110,8 +136,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
             onClick={() => { setCurrentTab('onboarding'); setIsSidebarOpen(false); }}
             className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-slate-400 hover:bg-slate-800 hover:text-white transition-all"
           >
-            <LogOut className="w-5 h-5" />
-            Sair ou Criar Novo Salão
+            <PlusCircle className="w-5 h-5" />
+            Criar Nova Barbearia
           </button>
         </div>
       </aside>

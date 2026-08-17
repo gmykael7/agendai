@@ -14,6 +14,7 @@ export interface Barber {
   commission_rate: number;
   avatar_url?: string;
   phone: string;
+  active?: boolean;
 }
 
 export interface Appointment {
@@ -27,6 +28,7 @@ export interface Appointment {
   start_time: string;
   price: number;
   status: 'scheduled' | 'completed' | 'canceled';
+  date?: string;
 }
 
 export interface Organization {
@@ -34,7 +36,10 @@ export interface Organization {
   name: string;
   slug: string;
   phone: string;
+  address?: string;
   primary_color: string;
+  open_hour?: string;
+  close_hour?: string;
 }
 
-export type TabType = 'dashboard' | 'services' | 'booking' | 'onboarding';
+export type TabType = 'dashboard' | 'services' | 'team' | 'booking' | 'settings' | 'onboarding';
