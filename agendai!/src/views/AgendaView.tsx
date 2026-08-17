@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { 
   Calendar as CalendarIcon, ChevronLeft, ChevronRight, 
-  Clock, User, Scissors, Plus, CheckCircle, AlertCircle
+  Clock, User, Scissors, Plus, CheckCircle, AlertCircle,
+  Phone, MessageSquare, Check, X, DollarSign, QrCode, CreditCard, Banknote
 } from 'lucide-react';
 import { Appointment, Barber, Service } from '../types';
 
@@ -22,6 +23,17 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
   const [selectedDate, setSelectedDate] = useState<string>(() => {
     return new Date().toISOString().split('T')[0];
   });
+
+  const [completingApp, setCompletingApp] = useState<Appointment | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<'pix' | 'credit' | 'debit' | 'cash'>('pix');
+
+  // Modal novo agendamento na agenda
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [modalTime, setModalTime] = useState('10:00');
+  const [clientName, setClientName] = useState('');
+  const [clientPhone, setClientPhone] = useState('');
+  const [serviceId, setServiceId] = useState(services[0]?.id || '');
+  const [barberId, setBarberId] = useState(barbers[0]?.id || '');
 
   const slots = useMemo(() => {
     const list: string[] = [];
@@ -49,6 +61,65 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
     });
   }, [selectedDate]);
 
+  // Agendamentos específicos da data selecionada
+  const dayAppointments = useMemo(() => {
+    return appointments.filter(a => {
+      const appDate = a.date || new Date().toISOString().split('T')[0];
+      const matchesDate = appDate === selectedDate;
+      const matchesBarber = selectedBarberId === 'all' || a.barber_id === selectedBarberId;
+      return matchesDate && matchesBarber;
+    });
+  }, [appointments, selectedDate, selectedBarberId]);
+
+  const activeDayAppointments = dayAppointments.filter(a => a.status !== 'canceled');
+  const completedDayAppointments = dayAppointments.filter(a => a.status === 'completed');
+  const dayRevenue = activeDayAppointments.reduce((acc, curr) => acc + curr.price, 0);
+
+  const handleFinishAppointment = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!completingApp) return;
+
+    setAppointments(prev => prev.map(a => 
+      a.id === completingApp.id ? { ...a, status: 'completed', payment_method: paymentMethod } : a
+    ));
+    setCompletingApp(null);
+  };
+
+  const handleCreateAppointment = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!clientName.trim()) return;
+
+    const srv = services.find(s => s.id === serviceId) || services[0];
+    const brb = barbers.find(b => b.id === barberId) || barbers[0];
+    if (!srv || !brb) return;
+
+    const created: Appointment = {
+      id: 'app-' + Date.now(),
+      client_name: clientName.trim(),
+      client_phone: clientPhone.trim() || 'Não informado',
+      service_id: srv.id,
+      service_name: srv.name,
+      barber_id: brb.id,
+      barber_name: brb.full_name,
+      start_time: modalTime,
+      price: srv.price,
+      status: 'scheduled',
+      date: selectedDate,
+    };
+
+    setAppointments(prev => [created, ...prev]);
+    setClientName('');
+    setClientPhone('');
+    setShowAddModal(false);
+  };
+
+  const getWhatsAppDirect = (clientPhone: string, clientName: string, time: string) => {
+    const cleanPhone = clientPhone.replace(/\D/g, '');
+    const message = encodeURIComponent(`Olá ${clientName}, tudo bem? Confirmando seu horário hoje às ${time} na barbearia!`);
+    const fullPhone = cleanPhone.length <= 11 ? `55${cleanPhone}` : cleanPhone;
+    return `https://wa.me/${fullPhone}?text=${message}`;
+  };
+
   return (
     <div className="space-y-6 animate-fadeIn">
       {/* CABEÇALHO DA AGENDA */}
@@ -69,7 +140,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
           <select
             value={selectedBarberId}
             onChange={(e) => setSelectedBarberId(e.target.value)}
-            className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none"
+            className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none cursor-pointer"
           >
             <option value="all">Todos os Barbeiros</option>
             {barbers.map(b => (
@@ -88,7 +159,11 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
             </button>
             <button
               onClick={() => setSelectedDate(new Date().toISOString().split('T')[0])}
-              className="px-2.5 py-1 text-xs font-semibold text-emerald-400 hover:bg-slate-800 rounded-lg transition-colors"
+              className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-colors ${
+                selectedDate === new Date().toISOString().split('T')[0]
+                  ? 'text-emerald-400 bg-emerald-500/10'
+                  : 'text-slate-300 hover:bg-slate-800'
+              }`}
             >
               Hoje
             </button>
@@ -100,6 +175,39 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>
+
+          <button
+            onClick={() => {
+              setServiceId(services[0]?.id || '');
+              setBarberId(barbers[0]?.id || '');
+              setModalTime('14:00');
+              setShowAddModal(true);
+            }}
+            className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1.5 transition-all shadow-lg shadow-emerald-500/10"
+          >
+            <Plus className="w-4 h-4" />
+            Agendar Horário
+          </button>
+        </div>
+      </div>
+
+      {/* BARRA DE RESUMO DO DIA */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="bg-[#121B2E] p-4 rounded-2xl border border-slate-800">
+          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Agendados no Dia</p>
+          <p className="text-xl font-bold text-white font-mono mt-1">{activeDayAppointments.length}</p>
+        </div>
+        <div className="bg-[#121B2E] p-4 rounded-2xl border border-slate-800">
+          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Concluídos</p>
+          <p className="text-xl font-bold text-emerald-400 font-mono mt-1">{completedDayAppointments.length}</p>
+        </div>
+        <div className="bg-[#121B2E] p-4 rounded-2xl border border-slate-800">
+          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Faturamento Previsto</p>
+          <p className="text-xl font-bold text-emerald-400 font-mono mt-1">R$ {dayRevenue.toFixed(2)}</p>
+        </div>
+        <div className="bg-[#121B2E] p-4 rounded-2xl border border-slate-800">
+          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Horários Livres</p>
+          <p className="text-xl font-bold text-slate-300 font-mono mt-1">{slots.length - activeDayAppointments.length}</p>
         </div>
       </div>
 
@@ -108,10 +216,12 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
         <div className="grid grid-cols-1 gap-2.5">
           {slots.map((time) => {
             const matchingAppointments = appointments.filter(a => {
+              const appDate = a.date || new Date().toISOString().split('T')[0];
+              const matchesDate = appDate === selectedDate;
               const matchesTime = a.start_time === time;
               const matchesBarber = selectedBarberId === 'all' || a.barber_id === selectedBarberId;
               const isNotCanceled = a.status !== 'canceled';
-              return matchesTime && matchesBarber && isNotCanceled;
+              return matchesDate && matchesTime && matchesBarber && isNotCanceled;
             });
 
             const isOccupied = matchingAppointments.length > 0;
@@ -119,13 +229,13 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
             return (
               <div
                 key={time}
-                className={`p-3 sm:p-4 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                className={`p-3.5 sm:p-4 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
                   isOccupied
-                    ? 'bg-slate-900/90 border-slate-700/80 shadow-sm'
-                    : 'bg-slate-950/40 border-slate-800/40 opacity-75 hover:opacity-100 hover:border-slate-700'
+                    ? 'bg-slate-900 border-slate-700 shadow-sm'
+                    : 'bg-[#0B1120]/60 border-slate-800/60 opacity-80 hover:opacity-100 hover:border-slate-700'
                 }`}
               >
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-4 flex-1">
                   <div className="w-16 text-center shrink-0">
                     <span className={`text-base font-bold font-mono ${isOccupied ? 'text-emerald-400' : 'text-slate-500'}`}>
                       {time}
@@ -133,45 +243,248 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                   </div>
 
                   {isOccupied ? (
-                    <div className="space-y-1">
+                    <div className="space-y-2 flex-1">
                       {matchingAppointments.map(app => (
-                        <div key={app.id} className="flex flex-wrap items-center gap-2">
-                          <span className="font-bold text-white text-sm">{app.client_name}</span>
-                          <span className="text-xs text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20 font-medium">
-                            {app.service_name}
-                          </span>
-                          <span className="text-xs text-slate-400">
-                            • Profissional: <strong className="text-slate-300">{app.barber_name}</strong>
-                          </span>
-                          <span className="text-xs text-slate-400 font-mono font-bold">
-                            (R$ {app.price.toFixed(2)})
-                          </span>
+                        <div key={app.id} className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-bold text-white text-sm">{app.client_name}</span>
+                            <span className="text-xs text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-lg border border-emerald-500/20 font-medium">
+                              {app.service_name}
+                            </span>
+                            <span className="text-xs text-slate-400">
+                              • Barbeiro: <strong className="text-slate-200">{app.barber_name}</strong>
+                            </span>
+                            <span className="text-xs text-emerald-400 font-mono font-bold">
+                              (R$ {app.price.toFixed(2)})
+                            </span>
+                            {app.client_phone && (
+                              <a
+                                href={getWhatsAppDirect(app.client_phone, app.client_name, app.start_time)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-[11px] text-emerald-400 hover:underline bg-emerald-500/10 px-2 py-0.5 rounded-md"
+                              >
+                                <MessageSquare className="w-3 h-3" />
+                                {app.client_phone}
+                              </a>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
+                              app.status === 'completed' 
+                                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                                : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                            }`}>
+                              {app.status === 'completed' ? 'Concluído' : 'Agendado'}
+                            </span>
+
+                            {app.status === 'scheduled' && (
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  onClick={() => setCompletingApp(app)}
+                                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1"
+                                >
+                                  <CheckCircle className="w-3 h-3" />
+                                  Concluir
+                                </button>
+                                <button
+                                  onClick={() => setAppointments(prev => prev.map(a => a.id === app.id ? { ...a, status: 'canceled' } : a))}
+                                  className="px-2 py-1 bg-slate-800 hover:bg-rose-950 hover:text-rose-400 text-slate-400 rounded-lg text-xs font-medium transition-colors"
+                                >
+                                  Cancelar
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <span className="text-xs text-slate-500 font-medium flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-slate-700" /> Horário Disponível
-                    </span>
+                    <button
+                      onClick={() => {
+                        setModalTime(time);
+                        setServiceId(services[0]?.id || '');
+                        setBarberId(selectedBarberId !== 'all' ? selectedBarberId : barbers[0]?.id || '');
+                        setShowAddModal(true);
+                      }}
+                      className="text-xs text-slate-500 hover:text-emerald-400 font-medium flex items-center gap-1.5 transition-colors group cursor-pointer"
+                    >
+                      <span className="w-2 h-2 rounded-full bg-slate-700 group-hover:bg-emerald-500 transition-colors" />
+                      Horário Disponível — <span className="underline opacity-0 group-hover:opacity-100 transition-opacity">Clique para agendar</span>
+                    </button>
                   )}
                 </div>
 
-                <div>
-                  {isOccupied ? (
-                    <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                      Ocupado
-                    </span>
-                  ) : (
-                    <span className="text-[11px] text-slate-500 font-mono">
-                      Livre
-                    </span>
-                  )}
-                </div>
+                {!isOccupied && (
+                  <span className="text-[11px] text-slate-500 font-mono hidden sm:inline">
+                    Livre
+                  </span>
+                )}
               </div>
             );
           })}
         </div>
       </div>
+
+      {/* MODAL CONCLUIR ATENDIMENTO (PAGAMENTO) */}
+      {completingApp && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl animate-fadeIn">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <CheckCircle className="w-5 h-5 text-emerald-400" />
+                Concluir Atendimento
+              </h3>
+              <button onClick={() => setCompletingApp(null)} className="text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-xs space-y-1.5">
+              <p><span className="text-slate-400">Cliente:</span> <strong className="text-white">{completingApp.client_name}</strong></p>
+              <p><span className="text-slate-400">Serviço:</span> <strong className="text-white">{completingApp.service_name}</strong></p>
+              <p><span className="text-slate-400">Profissional:</span> <strong className="text-white">{completingApp.barber_name}</strong></p>
+              <p className="text-base font-bold text-emerald-400 font-mono pt-1">Total: R$ {completingApp.price.toFixed(2)}</p>
+            </div>
+
+            <form onSubmit={handleFinishAppointment} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-2">
+                  Forma de Pagamento
+                </label>
+                <div className="grid grid-cols-2 gap-2.5">
+                  {[
+                    { id: 'pix', label: 'Pix', icon: QrCode },
+                    { id: 'credit', label: 'Cartão Crédito', icon: CreditCard },
+                    { id: 'debit', label: 'Cartão Débito', icon: CreditCard },
+                    { id: 'cash', label: 'Dinheiro', icon: Banknote },
+                  ].map((m) => {
+                    const Icon = m.icon;
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => setPaymentMethod(m.id as any)}
+                        className={`p-3 rounded-xl text-xs font-semibold border flex items-center gap-2 transition-all ${
+                          paymentMethod === m.id
+                            ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
+                            : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                        }`}
+                      >
+                        <Icon className="w-4 h-4" />
+                        {m.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-3.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-sm transition-all shadow-lg shadow-emerald-500/10"
+              >
+                Confirmar Recebimento e Concluir
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL NOVO AGENDAMENTO */}
+      {showAddModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl animate-fadeIn">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <Plus className="w-5 h-5 text-emerald-400" />
+                Agendar Horário ({modalTime})
+              </h3>
+              <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateAppointment} className="space-y-3.5">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Nome do Cliente *</label>
+                <input
+                  type="text"
+                  required
+                  value={clientName}
+                  onChange={(e) => setClientName(e.target.value)}
+                  placeholder="Ex: Gabriel Moreira"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">WhatsApp</label>
+                <input
+                  type="tel"
+                  value={clientPhone}
+                  onChange={(e) => setClientPhone(e.target.value)}
+                  placeholder="(84) 99999-0000"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Serviço *</label>
+                <select
+                  value={serviceId}
+                  onChange={(e) => setServiceId(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none"
+                >
+                  {services.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name} - R$ {s.price.toFixed(2)}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Barbeiro *</label>
+                <select
+                  value={barberId}
+                  onChange={(e) => setBarberId(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none"
+                >
+                  {barbers.map((b) => (
+                    <option key={b.id} value={b.id}>{b.full_name} ({b.role})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Horário *</label>
+                <input
+                  type="time"
+                  required
+                  value={modalTime}
+                  onChange={(e) => setModalTime(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none font-mono"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(false)}
+                  className="px-4 py-2 bg-slate-800 text-slate-300 rounded-xl text-xs"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs"
+                >
+                  Salvar Agendamento
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

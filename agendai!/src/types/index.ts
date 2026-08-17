@@ -1,5 +1,6 @@
 export interface Service {
   id: string;
+  org_id?: string;
   name: string;
   price: number;
   duration_minutes: number;
@@ -9,6 +10,7 @@ export interface Service {
 
 export interface Barber {
   id: string;
+  org_id?: string;
   full_name: string;
   role: string;
   commission_rate: number;
@@ -19,6 +21,7 @@ export interface Barber {
 
 export interface Appointment {
   id: string;
+  org_id?: string;
   client_name: string;
   client_phone: string;
   service_id: string;
@@ -30,10 +33,12 @@ export interface Appointment {
   status: 'scheduled' | 'in_progress' | 'completed' | 'canceled';
   payment_method?: 'pix' | 'credit' | 'debit' | 'cash';
   date?: string;
+  created_at?: string;
 }
 
 export interface Client {
   id: string;
+  org_id?: string;
   name: string;
   phone: string;
   total_visits: number;
@@ -44,6 +49,7 @@ export interface Client {
 
 export interface CashTransaction {
   id: string;
+  org_id?: string;
   type: 'income' | 'expense' | 'commission';
   amount: number;
   description: string;

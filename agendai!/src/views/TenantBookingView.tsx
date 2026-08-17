@@ -11,7 +11,7 @@ interface TenantBookingViewProps {
   services: Service[];
   barbers: Barber[];
   appointments: Appointment[];
-  onAddAppointment: (newApp: Omit<Appointment, 'id'>) => void;
+  onAddAppointment: (newApp: Omit<Appointment, 'id'>) => Appointment | void;
   onBackToAdmin?: () => void;
   isStandalone?: boolean;
 }
@@ -59,24 +59,27 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
       slots.push(`${hourStr}:00`);
       slots.push(`${hourStr}:30`);
     }
-    return slots.length > 0 ? slots : ['09:00', '10:00', '11:00', '14:00', '15:00', '16:00', '17:00', '18:00'];
+    return slots.length > 0 ? slots : [
+      '08:00', '08:30', '09:00', '09:30', '10:00', '10:30', 
+      '11:00', '11:30', '14:00', '14:30', '15:00', '15:30', 
+      '16:00', '16:30', '17:00', '17:30', '18:00', '18:30', '19:00'
+    ];
   }, [org.open_hour, org.close_hour]);
 
-  const activeServices = services.filter(s => s.active);
-  const activeBarbers = barbers.filter(b => b.active !== false);
+  // Considera ativos todos os serviços onde active !== false
+  const activeServices = useMemo(() => {
+    return services.filter(s => s.active !== false);
+  }, [services]);
+
+  // Considera ativos todos os barbeiros onde active !== false
+  const activeBarbers = useMemo(() => {
+    return barbers.filter(b => b.active !== false);
+  }, [barbers]);
 
   // Gerar link direto do WhatsApp da Barbearia com a mensagem formatada
-  const generateWhatsAppUrl = (app: {
-    client_name: string;
-    client_phone: string;
-    service_name: string;
-    price: number;
-    barber_name: string;
-    date: string;
-    start_time: string;
-  }) => {
-    const cleanPhone = org.phone.replace(/\D/g, '');
-    const formattedSelectedDate = new Date(app.date + 'T00:00:00').toLocaleDateString('pt-BR', {
+  const generateWhatsAppUrl = (app: Appointment) => {
+    const cleanPhone = (org.phone || '').replace(/\D/g, '');
+    const formattedSelectedDate = new Date((app.date || selectedDate) + 'T00:00:00').toLocaleDateString('pt-BR', {
       weekday: 'long',
       day: 'numeric',
       month: 'long'
@@ -99,7 +102,7 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
       `⏰ *Horário:* às ${app.start_time}
 
 ` +
-      `_Agendamento enviado automaticamente pelo sistema AgendAI._`
+      `_Agendamento registrado no sistema AgendAI._`
     );
 
     // Se o telefone começar com código do país (55) ou DDD
@@ -112,6 +115,7 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
     if (!selectedService || !selectedBarber || !selectedTime || !clientName.trim() || !clientPhone.trim()) return;
 
     const newApp: Omit<Appointment, 'id'> = {
+      org_id: org.id,
       client_name: clientName.trim(),
       client_phone: clientPhone.trim(),
       service_id: selectedService.id,
@@ -124,21 +128,22 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
       date: selectedDate,
     };
 
-    onAddAppointment(newApp);
+    const created = onAddAppointment(newApp);
 
-    const fullApp = {
+    const fullApp: Appointment = (created && created.id) ? created : {
       ...newApp,
       id: 'app-' + Date.now(),
     };
+
     setLastCreatedAppointment(fullApp);
     setConfirmed(true);
 
-    // Redireciona automaticamente para o WhatsApp da Barbearia
+    // Redireciona opcionalmente para o WhatsApp
     const waUrl = generateWhatsAppUrl(fullApp);
     try {
       window.open(waUrl, '_blank');
     } catch {
-      // Caso o navegador bloqueie popup, o botão na tela de confirmação estará disponível
+      // Bloqueio de popup gerenciado pelo botão na tela de confirmação
     }
   };
 
@@ -205,7 +210,7 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
               <div>
                 <h3 className="text-2xl font-bold text-white">Agendamento Confirmado!</h3>
                 <p className="text-xs text-slate-300 mt-1">
-                  Seu horário foi salvo no sistema da barbearia.
+                  Seu horário foi salvo com sucesso no sistema da barbearia.
                 </p>
               </div>
 
@@ -226,11 +231,11 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
                 <div className="flex justify-between">
                   <span className="text-slate-400">Data e Horário:</span>
                   <span className="text-emerald-400 font-bold font-mono text-sm">
-                    {new Date(lastCreatedAppointment.date + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} às {lastCreatedAppointment.start_time}
+                    {new Date((lastCreatedAppointment.date || selectedDate) + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} às {lastCreatedAppointment.start_time}
                   </span>
                 </div>
                 <div className="flex justify-between border-t border-slate-800/80 pt-2">
-                  <span className="text-slate-400">Valor a pagar:</span>
+                  <span className="text-slate-400">Valor:</span>
                   <span className="text-emerald-400 font-bold font-mono text-base">R$ {lastCreatedAppointment.price.toFixed(2)}</span>
                 </div>
               </div>
@@ -248,7 +253,7 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
                 </a>
 
                 <p className="text-[11px] text-slate-400">
-                  Clique no botão acima para abrir o WhatsApp e enviar os detalhes da reserva diretamente para a barbearia.
+                  Clique no botão acima para abrir o WhatsApp e avisar a barbearia sobre sua chegada.
                 </p>
 
                 <button
@@ -258,6 +263,8 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
                     setSelectedService(null);
                     setSelectedBarber(null);
                     setSelectedTime('');
+                    setClientName('');
+                    setClientPhone('');
                   }}
                   className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-semibold text-xs transition-colors"
                 >
@@ -363,7 +370,7 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
                           setSelectedBarber(barber);
                           setStep(4);
                         }}
-                        className="p-4 rounded-2xl bg-[#0B1120] border border-slate-800 hover:border-emerald-500/50 cursor-pointer flex items-center gap-3.5 transition-all group"
+                        className="p-4 rounded-2xl bg-[#0B1120] border border-slate-800 hover:border-emerald-500/50 cursor-pointer flex items-center gap-3.5 transition-all group hover:bg-slate-950"
                       >
                         <img 
                           src={barber.avatar_url || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=250'} 
@@ -389,14 +396,18 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
                       Escolha o Horário
                     </h3>
                     <button onClick={() => setStep(3)} className="text-xs text-emerald-400 hover:underline">
-                      Alterar barbeiro
+                      Alterar profissional
                     </button>
                   </div>
+
+                  <p className="text-xs text-slate-400">
+                    Horários disponíveis para <strong className="text-white">{selectedBarber?.full_name}</strong> no dia <strong className="text-emerald-400">{new Date(selectedDate + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}</strong>:
+                  </p>
 
                   <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5 max-h-64 overflow-y-auto pr-1">
                     {timeSlots.map((time) => {
                       const isOccupied = appointments.some(
-                        a => a.date === selectedDate && a.start_time === time && a.barber_id === selectedBarber?.id && a.status !== 'canceled'
+                        a => (a.date || selectedDate) === selectedDate && a.start_time === time && a.barber_id === selectedBarber?.id && a.status !== 'canceled'
                       );
 
                       return (
@@ -427,7 +438,7 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
                   <div className="flex justify-between items-center">
                     <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
                       <span className="w-5 h-5 rounded-full bg-emerald-500 text-slate-950 text-xs flex items-center justify-center font-bold">5</span>
-                      Seus Dados
+                      Seus Dados de Contato
                     </h3>
                     <button type="button" onClick={() => setStep(4)} className="text-xs text-emerald-400 hover:underline">
                       Alterar horário
@@ -435,7 +446,7 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
                   </div>
 
                   {/* Resumo da Escolha */}
-                  <div className="bg-[#0B1120] p-3.5 rounded-2xl border border-slate-800 text-xs space-y-1.5 text-slate-300">
+                  <div className="bg-[#0B1120] p-4 rounded-2xl border border-slate-800 text-xs space-y-1.5 text-slate-300">
                     <p><span className="text-slate-500">Serviço:</span> <strong className="text-white">{selectedService?.name}</strong> (R$ {selectedService?.price.toFixed(2)})</p>
                     <p><span className="text-slate-500">Profissional:</span> <strong className="text-white">{selectedBarber?.full_name}</strong></p>
                     <p><span className="text-slate-500">Data e Horário:</span> <strong className="text-emerald-400 font-mono">{selectedTime}</strong> no dia {new Date(selectedDate + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}</p>
@@ -471,10 +482,10 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
 
                   <button
                     type="submit"
-                    className="w-full py-4 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-2xl transition-all shadow-lg shadow-emerald-500/20 text-sm mt-2 flex items-center justify-center gap-2"
+                    className="w-full py-4 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-2xl transition-all shadow-lg shadow-emerald-500/20 text-sm mt-2 flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <MessageSquare className="w-4 h-4 fill-slate-950" />
-                    Confirmar e Enviar no WhatsApp
+                    Confirmar Agendamento
                   </button>
                 </form>
               )}

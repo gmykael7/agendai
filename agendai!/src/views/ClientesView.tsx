@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   Users, Plus, Search, Phone, MessageSquare, 
   Calendar, DollarSign, X, Check, User
@@ -21,23 +21,30 @@ export const ClientesView: React.FC<ClientesViewProps> = ({
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
 
-  // Sincronizar clientes a partir dos agendamentos se a lista estiver vazia
-  const allClients = React.useMemo(() => {
+  // Unifica clientes cadastrados com os clientes de agendamentos
+  const allClients = useMemo(() => {
     const map = new Map<string, Client>();
 
-    // Adiciona clientes cadastrados
-    clients.forEach(c => map.set(c.phone || c.name, c));
+    // 1. Clientes salvos
+    clients.forEach(c => {
+      const key = (c.phone && c.phone !== 'Não informado' ? c.phone.replace(/\D/g, '') : c.name.toLowerCase().trim());
+      map.set(key, { ...c });
+    });
 
-    // Adiciona clientes dos agendamentos
+    // 2. Clientes vindos dos agendamentos
     appointments.forEach(a => {
-      const key = a.client_phone || a.client_name;
-      if (!map.has(key)) {
+      const key = (a.client_phone && a.client_phone !== 'Não informado' ? a.client_phone.replace(/\D/g, '') : a.client_name.toLowerCase().trim());
+      if (map.has(key)) {
+        const existing = map.get(key)!;
+        // Se o agendamento for concluído, soma no total gasto se ainda não calculado
+      } else {
         map.set(key, {
-          id: 'c-' + Date.now() + Math.random(),
+          id: 'cli-' + (a.client_phone ? a.client_phone.replace(/\D/g, '') : a.id),
+          org_id: a.org_id,
           name: a.client_name,
-          phone: a.client_phone,
+          phone: a.client_phone || 'Não informado',
           total_visits: 1,
-          total_spent: a.price,
+          total_spent: a.status === 'completed' ? a.price : 0,
           last_visit: a.date || 'Hoje',
         });
       }
@@ -72,8 +79,9 @@ export const ClientesView: React.FC<ClientesViewProps> = ({
 
   const getWhatsAppDirect = (clientPhone: string, clientName: string) => {
     const cleanPhone = clientPhone.replace(/\D/g, '');
-    const message = encodeURIComponent(`Olá ${clientName}, tudo bem? Aqui é da barbearia! Gostaria de agendar seu próximo horário?`);
-    return `https://wa.me/55${cleanPhone}?text=${message}`;
+    const message = encodeURIComponent(`Olá ${clientName}, tudo bem? Aqui é da barbearia! Gostaria de agendar um novo horário?`);
+    const fullPhone = cleanPhone.length <= 11 ? `55${cleanPhone}` : cleanPhone;
+    return `https://wa.me/${fullPhone}?text=${message}`;
   };
 
   return (
@@ -86,7 +94,7 @@ export const ClientesView: React.FC<ClientesViewProps> = ({
             Base de Clientes
           </h2>
           <p className="text-sm text-slate-400 mt-1">
-            Histórico de visitas, consumo e contato direto via WhatsApp.
+            Histórico de visitas, consumo acumulado e contato direto via WhatsApp.
           </p>
         </div>
 
@@ -113,7 +121,7 @@ export const ClientesView: React.FC<ClientesViewProps> = ({
         </div>
 
         <span className="text-xs text-slate-400 font-mono hidden sm:inline">
-          {filtered.length} clientes encontrados
+          {filtered.length} clientes cadastrados
         </span>
       </div>
 
