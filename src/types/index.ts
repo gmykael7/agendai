@@ -27,13 +27,37 @@ export interface Appointment {
   barber_name: string;
   start_time: string;
   price: number;
-  status: 'scheduled' | 'completed' | 'canceled';
+  status: 'scheduled' | 'in_progress' | 'completed' | 'canceled';
+  payment_method?: 'pix' | 'credit' | 'debit' | 'cash';
   date?: string;
+}
+
+export interface Client {
+  id: string;
+  name: string;
+  phone: string;
+  total_visits: number;
+  total_spent: number;
+  last_visit?: string;
+  notes?: string;
+}
+
+export interface CashTransaction {
+  id: string;
+  type: 'income' | 'expense' | 'commission';
+  amount: number;
+  description: string;
+  payment_method: 'pix' | 'credit' | 'debit' | 'cash';
+  date: string;
+  time: string;
+  appointment_id?: string;
+  barber_id?: string;
 }
 
 export interface Organization {
   id: string;
   name: string;
+  owner_name?: string;
   slug: string;
   phone: string;
   address?: string;
@@ -42,4 +66,12 @@ export interface Organization {
   close_hour?: string;
 }
 
-export type TabType = 'dashboard' | 'services' | 'team' | 'booking' | 'settings' | 'onboarding';
+export type TabType = 
+  | 'dashboard' 
+  | 'atendimentos' 
+  | 'agenda' 
+  | 'caixa' 
+  | 'clientes' 
+  | 'ajustes' 
+  | 'booking' 
+  | 'onboarding';

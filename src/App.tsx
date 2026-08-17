@@ -4,23 +4,33 @@ import {
   Organization, 
   Service, 
   Barber, 
-  Appointment 
+  Appointment,
+  Client
 } from './types';
 import { Sidebar } from './components/layout/Sidebar';
 import { Header } from './components/layout/Header';
 import { DashboardView } from './views/DashboardView';
-import { ServicesView } from './views/ServicesView';
-import { TeamView } from './views/TeamView';
-import { SettingsView } from './views/SettingsView';
+import { AtendimentosView } from './views/AtendimentosView';
+import { AgendaView } from './views/AgendaView';
+import { CaixaView } from './views/CaixaView';
+import { ClientesView } from './views/ClientesView';
+import { AjustesView } from './views/AjustesView';
 import { TenantBookingView } from './views/TenantBookingView';
 import { AuthOnboardingView } from './views/AuthOnboardingView';
-import { INITIAL_ORG, INITIAL_SERVICES, INITIAL_BARBERS, INITIAL_APPOINTMENTS } from './data/mockData';
+import { 
+  INITIAL_ORG, 
+  INITIAL_SERVICES, 
+  INITIAL_BARBERS, 
+  INITIAL_APPOINTMENTS,
+  INITIAL_CLIENTS
+} from './data/mockData';
 
 const STORAGE_KEYS = {
   ORG: 'agendai_org',
   SERVICES: 'agendai_services',
   BARBERS: 'agendai_barbers',
   APPOINTMENTS: 'agendai_appointments',
+  CLIENTS: 'agendai_clients',
 };
 
 export default function App() {
@@ -45,13 +55,17 @@ export default function App() {
     return saved ? JSON.parse(saved) : [];
   });
 
+  const [clients, setClients] = useState<Client[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.CLIENTS);
+    return saved ? JSON.parse(saved) : [];
+  });
+
   const [currentTab, setCurrentTab] = useState<TabType>(() => {
     const savedOrg = localStorage.getItem(STORAGE_KEYS.ORG);
     return savedOrg ? 'dashboard' : 'onboarding';
   });
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [realtimeActive, setRealtimeActive] = useState(true);
 
   // Persistência automática no localStorage
   useEffect(() => {
@@ -74,22 +88,40 @@ export default function App() {
     localStorage.setItem(STORAGE_KEYS.APPOINTMENTS, JSON.stringify(appointments));
   }, [appointments]);
 
-  // Simulação de atualizações em tempo real (Supabase Realtime)
   useEffect(() => {
-    const interval = setInterval(() => {
-      if (realtimeActive && org && Math.random() > 0.75) {
-        console.log('Realtime Event: Channel active and listening for bookings.');
-      }
-    }, 15000);
-    return () => clearInterval(interval);
-  }, [realtimeActive, org]);
+    localStorage.setItem(STORAGE_KEYS.CLIENTS, JSON.stringify(clients));
+  }, [clients]);
 
   const handleAddAppointment = (newApp: Omit<Appointment, 'id'>) => {
     const created: Appointment = {
       ...newApp,
       id: 'app-' + Date.now(),
+      date: new Date().toISOString().split('T')[0],
     };
     setAppointments((prev) => [created, ...prev]);
+
+    // Atualizar ou adicionar à lista de clientes
+    setClients((prev) => {
+      const existing = prev.find(c => c.phone === newApp.client_phone || c.name === newApp.client_name);
+      if (existing) {
+        return prev.map(c => c.id === existing.id ? {
+          ...c,
+          total_visits: c.total_visits + 1,
+          total_spent: c.total_spent + newApp.price,
+          last_visit: 'Hoje',
+        } : c);
+      } else {
+        const newClient: Client = {
+          id: 'cli-' + Date.now(),
+          name: newApp.client_name,
+          phone: newApp.client_phone,
+          total_visits: 1,
+          total_spent: newApp.price,
+          last_visit: 'Hoje',
+        };
+        return [newClient, ...prev];
+      }
+    });
   };
 
   const handleCompleteOnboarding = (newOrg: Organization) => {
@@ -107,6 +139,7 @@ export default function App() {
     setServices(demoData.services);
     setBarbers(demoData.barbers);
     setAppointments(demoData.appointments);
+    setClients(INITIAL_CLIENTS);
     setCurrentTab('dashboard');
   };
 
@@ -116,13 +149,14 @@ export default function App() {
     setServices([]);
     setBarbers([]);
     setAppointments([]);
+    setClients([]);
     setCurrentTab('onboarding');
   };
 
-  // Se não houver organização cadastrada ou estiver na aba onboarding, renderiza onboarding
+  // Se não houver organização cadastrada ou estiver na aba onboarding
   if (!org || currentTab === 'onboarding') {
     return (
-      <div className="min-h-screen bg-slate-950 text-slate-100 font-sans p-4 sm:p-8 flex items-center justify-center">
+      <div className="min-h-screen bg-[#070B14] text-slate-100 font-sans p-4 sm:p-8 flex items-center justify-center">
         <AuthOnboardingView
           onComplete={handleCompleteOnboarding}
           onLoadDemo={handleLoadDemo}
@@ -134,7 +168,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans flex flex-col md:flex-row">
+    <div className="min-h-screen bg-[#070B14] text-slate-100 font-sans flex flex-col md:flex-row">
       {/* SIDEBAR DE NAVEGAÇÃO ADMINISTRATIVA */}
       {currentTab !== 'booking' && (
         <Sidebar
@@ -147,7 +181,7 @@ export default function App() {
       )}
 
       {/* ÁREA PRINCIPAL DE CONTEÚDO */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-y-auto">
+      <main className="flex-1 flex flex-col min-w-0 overflow-y-auto bg-[#070B14]">
         {/* Cabeçalho Mobile */}
         {currentTab !== 'booking' && (
           <Header 
@@ -157,7 +191,7 @@ export default function App() {
         )}
 
         {/* CONTEÚDO DA ABA ATIVA */}
-        <div className="flex-1 p-4 md:p-8 max-w-7xl w-full mx-auto">
+        <div className="flex-1 p-4 sm:p-6 md:p-8 max-w-7xl w-full mx-auto">
           {currentTab === 'dashboard' && (
             <DashboardView 
               appointments={appointments}
@@ -165,33 +199,53 @@ export default function App() {
               services={services}
               barbers={barbers}
               org={org}
-              onNavigateToBooking={() => setCurrentTab('booking')}
-              onNavigateToServices={() => setCurrentTab('services')}
-              onNavigateToTeam={() => setCurrentTab('team')}
-              realtimeActive={realtimeActive}
-              setRealtimeActive={setRealtimeActive}
+              onNavigateToAgenda={() => setCurrentTab('agenda')}
+              onNavigateToServices={() => setCurrentTab('ajustes')}
             />
           )}
 
-          {currentTab === 'services' && (
-            <ServicesView 
+          {currentTab === 'atendimentos' && (
+            <AtendimentosView 
+              appointments={appointments}
+              setAppointments={setAppointments}
               services={services}
-              setServices={setServices}
+              barbers={barbers}
             />
           )}
 
-          {currentTab === 'team' && (
-            <TeamView 
+          {currentTab === 'agenda' && (
+            <AgendaView 
+              appointments={appointments}
+              setAppointments={setAppointments}
               barbers={barbers}
-              setBarbers={setBarbers}
+              services={services}
+            />
+          )}
+
+          {currentTab === 'caixa' && (
+            <CaixaView 
+              appointments={appointments}
+              barbers={barbers}
+            />
+          )}
+
+          {currentTab === 'clientes' && (
+            <ClientesView 
+              clients={clients}
+              setClients={setClients}
               appointments={appointments}
             />
           )}
 
-          {currentTab === 'settings' && (
-            <SettingsView 
+          {currentTab === 'ajustes' && (
+            <AjustesView 
               org={org}
               setOrg={setOrg as React.Dispatch<React.SetStateAction<Organization>>}
+              services={services}
+              setServices={setServices}
+              barbers={barbers}
+              setBarbers={setBarbers}
+              appointments={appointments}
               onLoadDemo={handleLoadDemo}
               onResetAll={handleResetAll}
             />
