@@ -5,6 +5,7 @@ import {
   Sparkles, Check, ChevronRight, AlertCircle, Share2, Plus, CheckSquare, Square, Lock
 } from 'lucide-react';
 import { Organization, Service, Barber, Appointment } from '../types';
+import { pushAppointmentToCloud } from '../services/cloudSync';
 
 interface TenantBookingViewProps {
   org: Organization;
@@ -233,6 +234,9 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
       id: 'app-' + Date.now(),
     };
 
+    // ENVIA DIRETO PARA A NUVEM CLOUDFLARE
+    pushAppointmentToCloud(fullApp, org.slug);
+
     setLastCreatedAppointment(fullApp);
     setConfirmed(true);
 
@@ -245,40 +249,40 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
   };
 
   return (
-    <div className={`w-full ${isStandalone ? 'min-h-screen bg-[#070B14] py-8 px-4 flex items-center justify-center' : 'max-w-xl mx-auto py-4 animate-fadeIn'}`}>
+    <div className={`w-full ${isStandalone ? 'min-h-screen bg-[#070B14] py-4 sm:py-8 px-2 sm:px-4 flex items-center justify-center' : 'max-w-xl mx-auto py-2 sm:py-4 animate-fadeIn'}`}>
       <div className="w-full max-w-lg">
         {/* BOTÃO DE RETORNO AO PAINEL (APENAS PARA O ADMINISTRADOR) */}
         {!isStandalone && onBackToAdmin && (
-          <div className="flex justify-between items-center mb-4">
+          <div className="flex justify-between items-center mb-3">
             <button
               onClick={onBackToAdmin}
-              className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1.5 font-medium bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-xl transition-colors"
+              className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1.5 font-medium bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-xl transition-colors active:scale-95"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
-              Regressar ao Painel Admin
+              Regressar ao Painel
             </button>
-            <span className="text-[11px] text-slate-500 font-mono">Modo Visualização do Cliente</span>
+            <span className="text-[10px] text-slate-500 font-mono">Modo Cliente</span>
           </div>
         )}
 
         <div className="bg-[#121B2E] border border-slate-800 rounded-3xl overflow-hidden shadow-2xl">
           {/* CABEÇALHO DO SALÃO */}
-          <div className="p-6 bg-gradient-to-b from-emerald-500/15 to-transparent border-b border-slate-800 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 mx-auto mb-3 shadow-lg shadow-emerald-500/10">
-              <Scissors className="w-8 h-8" />
+          <div className="p-5 sm:p-6 bg-gradient-to-b from-emerald-500/15 to-transparent border-b border-slate-800 text-center">
+            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 mx-auto mb-2.5 shadow-lg shadow-emerald-500/10">
+              <Scissors className="w-7 h-7 sm:w-8 sm:h-8" />
             </div>
-            <h2 className="text-2xl font-bold text-white tracking-tight">{org.name}</h2>
+            <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">{org.name}</h2>
             {org.address && (
-              <p className="text-xs text-slate-400 mt-1 flex items-center justify-center gap-1">
+              <p className="text-xs text-slate-400 mt-0.5 flex items-center justify-center gap-1">
                 <MapPin className="w-3.5 h-3.5 text-emerald-400" /> {org.address}
               </p>
             )}
-            <p className="text-xs text-emerald-400 font-semibold mt-1">Agendamento Online Rápido</p>
+            <p className="text-[11px] sm:text-xs text-emerald-400 font-semibold mt-1">Agendamento Online 24h</p>
           </div>
 
           {/* MENSAGEM DE ERRO/ALERTA DE HORÁRIO OCUPADO */}
           {bookingError && (
-            <div className="mx-6 mt-4 p-3.5 bg-rose-950/40 border border-rose-800/60 rounded-2xl text-rose-300 text-xs flex items-center gap-2">
+            <div className="mx-4 sm:mx-6 mt-4 p-3.5 bg-rose-950/40 border border-rose-800/60 rounded-2xl text-rose-300 text-xs flex items-center gap-2">
               <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
               <span>{bookingError}</span>
             </div>
@@ -286,7 +290,7 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
 
           {/* VERIFICAÇÃO SE HÁ SERVIÇOS E PROFISSIONAIS CADASTRADOS */}
           {activeServices.length === 0 || activeBarbers.length === 0 ? (
-            <div className="p-10 text-center space-y-4">
+            <div className="p-8 sm:p-10 text-center space-y-4">
               <div className="w-12 h-12 bg-amber-500/10 text-amber-400 rounded-xl flex items-center justify-center mx-auto">
                 <Clock className="w-6 h-6" />
               </div>
@@ -307,20 +311,20 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
             </div>
           ) : confirmed && lastCreatedAppointment ? (
             /* TELA DE SUCESSO E ENVIO AO WHATSAPP */
-            <div className="p-6 sm:p-8 text-center space-y-6 animate-fadeIn">
-              <div className="w-16 h-16 bg-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center mx-auto border border-emerald-500/30 shadow-lg shadow-emerald-500/10">
-                <CheckCircle className="w-10 h-10" />
+            <div className="p-5 sm:p-8 text-center space-y-5 sm:space-y-6 animate-fadeIn">
+              <div className="w-14 h-14 sm:w-16 sm:h-16 bg-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center mx-auto border border-emerald-500/30 shadow-lg shadow-emerald-500/10">
+                <CheckCircle className="w-9 h-9 sm:w-10 sm:h-10" />
               </div>
 
               <div>
-                <h3 className="text-2xl font-bold text-white">Agendamento Confirmado!</h3>
+                <h3 className="text-xl sm:text-2xl font-bold text-white">Agendamento Confirmado!</h3>
                 <p className="text-xs text-slate-300 mt-1">
-                  Seu horário foi reservado exclusivamente para você no sistema da barbearia.
+                  Seu horário foi salvo e sincronizado no sistema da barbearia.
                 </p>
               </div>
 
               {/* CARD DETALHADO DO AGENDAMENTO */}
-              <div className="bg-[#0B1120] p-5 rounded-2xl border border-slate-800 text-left space-y-3 text-xs">
+              <div className="bg-[#0B1120] p-4 sm:p-5 rounded-2xl border border-slate-800 text-left space-y-2.5 text-xs">
                 <div className="flex justify-between">
                   <span className="text-slate-400">Cliente:</span>
                   <span className="text-white font-bold">{lastCreatedAppointment.client_name}</span>
@@ -333,18 +337,18 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
 
                 <div className="flex justify-between">
                   <span className="text-slate-400">Data e Horário:</span>
-                  <span className="text-emerald-400 font-bold font-mono text-sm">
+                  <span className="text-emerald-400 font-bold font-mono text-xs sm:text-sm">
                     {new Date((lastCreatedAppointment.date || selectedDate) + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} às {lastCreatedAppointment.start_time}
                   </span>
                 </div>
 
                 {/* LISTA DE SERVIÇOS INCLUSOS */}
-                <div className="border-t border-slate-800/80 pt-2.5 space-y-1.5">
+                <div className="border-t border-slate-800/80 pt-2 space-y-1">
                   <span className="text-slate-400 font-semibold block">Serviços Selecionados:</span>
                   {lastCreatedAppointment.services && lastCreatedAppointment.services.length > 0 ? (
                     lastCreatedAppointment.services.map((srv, idx) => (
-                      <div key={idx} className="flex justify-between items-center text-slate-300 bg-slate-900/60 px-2.5 py-1.5 rounded-lg border border-slate-800/60">
-                        <span>• {srv.name} <span className="text-[10px] text-slate-500">({srv.duration_minutes} min)</span></span>
+                      <div key={idx} className="flex justify-between items-center text-slate-300 bg-slate-900/60 px-2 py-1 rounded-lg border border-slate-800/60">
+                        <span>• {srv.name} <span className="text-[10px] text-slate-500">({srv.duration_minutes}m)</span></span>
                         <span className="font-mono font-bold text-white">R$ {srv.price.toFixed(2)}</span>
                       </div>
                     ))
@@ -356,29 +360,29 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
                   )}
                 </div>
 
-                <div className="flex justify-between border-t border-slate-800/80 pt-2.5">
+                <div className="flex justify-between border-t border-slate-800/80 pt-2 font-bold">
                   <div>
                     <span className="text-slate-400 block">Total a Pagar:</span>
-                    <span className="text-[11px] text-slate-500">Duração prevista: {lastCreatedAppointment.duration_minutes || totalDuration} min</span>
+                    <span className="text-[10px] text-slate-500">Duração: {lastCreatedAppointment.duration_minutes || totalDuration} min</span>
                   </div>
-                  <span className="text-emerald-400 font-black font-mono text-lg">R$ {lastCreatedAppointment.price.toFixed(2)}</span>
+                  <span className="text-emerald-400 font-black font-mono text-base sm:text-lg">R$ {lastCreatedAppointment.price.toFixed(2)}</span>
                 </div>
               </div>
 
               {/* BOTÃO EM DESTAQUE DO WHATSAPP DA BARBEARIA */}
-              <div className="space-y-3 pt-2">
+              <div className="space-y-2.5 pt-1">
                 <a
                   href={generateWhatsAppUrl(lastCreatedAppointment)}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="w-full py-4 bg-[#25D366] hover:bg-[#20bd5a] text-slate-950 font-black rounded-2xl transition-all flex items-center justify-center gap-2.5 shadow-lg shadow-emerald-500/20 text-sm"
+                  className="w-full py-3.5 sm:py-4 bg-[#25D366] hover:bg-[#20bd5a] text-slate-950 font-black rounded-2xl transition-all flex items-center justify-center gap-2.5 shadow-lg shadow-emerald-500/20 text-sm active:scale-98"
                 >
                   <MessageSquare className="w-5 h-5 fill-slate-950" />
                   Enviar no WhatsApp da Barbearia
                 </a>
 
-                <p className="text-[11px] text-slate-400">
-                  Clique no botão acima para abrir o WhatsApp e avisar a barbearia sobre sua chegada.
+                <p className="text-[10px] sm:text-[11px] text-slate-400">
+                  Clique no botão para abrir o WhatsApp e avisar a barbearia sobre sua chegada.
                 </p>
 
                 <button
@@ -392,7 +396,7 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
                     setClientPhone('');
                     setBookingError('');
                   }}
-                  className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-semibold text-xs transition-colors"
+                  className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-semibold text-xs transition-colors"
                 >
                   Fazer Outro Agendamento
                 </button>
@@ -400,10 +404,10 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
             </div>
           ) : (
             /* PASSO A PASSO (1 a 5) */
-            <div className="p-6 space-y-6">
+            <div className="p-4 sm:p-6 space-y-5 sm:space-y-6">
               {/* ETAPA 1: DATA */}
               {step === 1 && (
-                <div className="space-y-4 animate-fadeIn">
+                <div className="space-y-3.5 sm:space-y-4 animate-fadeIn">
                   <div className="flex justify-between items-center">
                     <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
                       <span className="w-5 h-5 rounded-full bg-emerald-500 text-slate-950 text-xs flex items-center justify-center font-bold">1</span>
@@ -411,7 +415,7 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
                     </h3>
                   </div>
 
-                  <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
+                  <div className="grid grid-cols-4 sm:grid-cols-7 gap-1.5 sm:gap-2">
                     {dateOptions.map((d) => {
                       const isSelected = selectedDate === d.dateStr;
                       return (
@@ -423,13 +427,13 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
                             setBookingError('');
                             setStep(2);
                           }}
-                          className={`p-3 rounded-2xl border text-center transition-all ${
+                          className={`p-2.5 sm:p-3 rounded-2xl border text-center transition-all active:scale-95 ${
                             isSelected
                               ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-md font-bold'
                               : 'bg-[#0B1120] text-slate-300 border-slate-800 hover:border-emerald-500/50'
                           }`}
                         >
-                          <span className="block text-[10px] opacity-75 font-mono uppercase">{d.weekday}</span>
+                          <span className="block text-[9px] sm:text-[10px] opacity-75 font-mono uppercase">{d.weekday}</span>
                           <span className="block text-xs font-bold mt-0.5">{d.label}</span>
                         </button>
                       );
@@ -440,15 +444,15 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
 
               {/* ETAPA 2: SERVIÇOS (MÚLTIPLA ESCOLHA) */}
               {step === 2 && (
-                <div className="space-y-4 animate-fadeIn">
+                <div className="space-y-3.5 sm:space-y-4 animate-fadeIn">
                   <div className="flex justify-between items-center">
                     <div>
                       <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
                         <span className="w-5 h-5 rounded-full bg-emerald-500 text-slate-950 text-xs flex items-center justify-center font-bold">2</span>
                         Selecione os Serviços
                       </h3>
-                      <p className="text-[11px] text-slate-400 mt-0.5">
-                        Você pode selecionar mais de um serviço para o mesmo horário.
+                      <p className="text-[10px] sm:text-[11px] text-slate-400 mt-0.5">
+                        Pode marcar mais de um serviço para o mesmo pedido.
                       </p>
                     </div>
                     <button onClick={() => setStep(1)} className="text-xs text-emerald-400 hover:underline shrink-0">
@@ -456,7 +460,7 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
                     </button>
                   </div>
 
-                  <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1">
+                  <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
                     {activeServices.map((service) => {
                       const isSelected = selectedServices.some(s => s.id === service.id);
 
@@ -464,34 +468,34 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
                         <div
                           key={service.id}
                           onClick={() => toggleService(service)}
-                          className={`p-4 rounded-2xl border cursor-pointer flex justify-between items-center transition-all group ${
+                          className={`p-3.5 rounded-2xl border cursor-pointer flex justify-between items-center transition-all group active:scale-98 ${
                             isSelected
                               ? 'bg-emerald-950/30 border-emerald-500/70 shadow-sm'
-                              : 'bg-[#0B1120] border-slate-800 hover:border-emerald-500/40 hover:bg-slate-900/50'
+                              : 'bg-[#0B1120] border-slate-800 hover:border-emerald-500/40'
                           }`}
                         >
-                          <div className="flex items-center gap-3">
-                            <div className={`w-6 h-6 rounded-lg flex items-center justify-center border transition-all ${
+                          <div className="flex items-center gap-2.5">
+                            <div className={`w-5 h-5 rounded-lg flex items-center justify-center border transition-all ${
                               isSelected 
                                 ? 'bg-emerald-500 border-emerald-400 text-slate-950' 
-                                : 'border-slate-700 bg-slate-900 text-transparent group-hover:border-slate-500'
+                                : 'border-slate-700 bg-slate-900 text-transparent'
                             }`}>
-                              <Check className="w-4 h-4 stroke-[3]" />
+                              <Check className="w-3.5 h-3.5 stroke-[3]" />
                             </div>
 
                             <div>
-                              <h4 className={`font-bold text-sm transition-colors ${
-                                isSelected ? 'text-emerald-300' : 'text-white group-hover:text-emerald-400'
+                              <h4 className={`font-bold text-xs sm:text-sm transition-colors ${
+                                isSelected ? 'text-emerald-300' : 'text-white'
                               }`}>
                                 {service.name}
                               </h4>
-                              <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-1">
+                              <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1">
                                 <Clock className="w-3 h-3 text-slate-500" /> {service.duration_minutes} min • {service.category}
                               </p>
                             </div>
                           </div>
 
-                          <span className={`text-sm font-bold font-mono px-3 py-1 rounded-xl border transition-all ${
+                          <span className={`text-xs sm:text-sm font-bold font-mono px-2.5 py-1 rounded-xl border transition-all ${
                             isSelected
                               ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
                               : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
@@ -505,24 +509,24 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
 
                   {/* BARRA DE RESUMO E AVANÇO */}
                   {selectedServices.length > 0 ? (
-                    <div className="bg-[#0B1120] p-4 rounded-2xl border border-emerald-500/30 space-y-3 pt-3">
+                    <div className="bg-[#0B1120] p-3.5 rounded-2xl border border-emerald-500/30 space-y-2.5 pt-3">
                       <div className="flex justify-between items-center text-xs">
                         <div>
-                          <span className="font-bold text-white">{selectedServices.length} serviço(s) selecionado(s)</span>
-                          <p className="text-[11px] text-slate-400">Duração estimada: {totalDuration} min</p>
+                          <span className="font-bold text-white text-xs">{selectedServices.length} serviço(s)</span>
+                          <p className="text-[10px] text-slate-400">Tempo: {totalDuration} min</p>
                         </div>
                         <div className="text-right">
-                          <span className="text-slate-400 text-[10px] uppercase tracking-wider block">Total</span>
-                          <span className="text-base font-black text-emerald-400 font-mono">R$ {totalPrice.toFixed(2)}</span>
+                          <span className="text-slate-400 text-[9px] uppercase tracking-wider block">Total</span>
+                          <span className="text-sm sm:text-base font-black text-emerald-400 font-mono">R$ {totalPrice.toFixed(2)}</span>
                         </div>
                       </div>
 
                       <button
                         type="button"
                         onClick={() => setStep(3)}
-                        className="w-full py-3.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20"
+                        className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs sm:text-sm transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/20 active:scale-98"
                       >
-                        Continuar para Escolha do Barbeiro
+                        Continuar para o Barbeiro
                         <ChevronRight className="w-4 h-4" />
                       </button>
                     </div>
@@ -536,18 +540,18 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
 
               {/* ETAPA 3: BARBEIRO */}
               {step === 3 && (
-                <div className="space-y-4 animate-fadeIn">
+                <div className="space-y-3.5 sm:space-y-4 animate-fadeIn">
                   <div className="flex justify-between items-center">
                     <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
                       <span className="w-5 h-5 rounded-full bg-emerald-500 text-slate-950 text-xs flex items-center justify-center font-bold">3</span>
                       Escolha o Profissional
                     </h3>
                     <button onClick={() => setStep(2)} className="text-xs text-emerald-400 hover:underline">
-                      Alterar serviços ({selectedServices.length})
+                      Alterar ({selectedServices.length})
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-1 gap-3">
+                  <div className="grid grid-cols-1 gap-2.5">
                     {activeBarbers.map((barber) => (
                       <div
                         key={barber.id}
@@ -555,16 +559,16 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
                           setSelectedBarber(barber);
                           setStep(4);
                         }}
-                        className="p-4 rounded-2xl bg-[#0B1120] border border-slate-800 hover:border-emerald-500/50 cursor-pointer flex items-center gap-3.5 transition-all group hover:bg-slate-950"
+                        className="p-3.5 rounded-2xl bg-[#0B1120] border border-slate-800 hover:border-emerald-500/50 cursor-pointer flex items-center gap-3 transition-all group active:scale-98"
                       >
                         <img 
                           src={barber.avatar_url || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=250'} 
                           alt={barber.full_name} 
-                          className="w-12 h-12 rounded-xl object-cover border border-slate-700 shadow" 
+                          className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl object-cover border border-slate-700 shadow" 
                         />
                         <div>
-                          <h4 className="font-bold text-white group-hover:text-emerald-400 transition-colors text-sm">{barber.full_name}</h4>
-                          <p className="text-xs text-slate-400">{barber.role}</p>
+                          <h4 className="font-bold text-white group-hover:text-emerald-400 transition-colors text-xs sm:text-sm">{barber.full_name}</h4>
+                          <p className="text-[11px] text-slate-400">{barber.role}</p>
                         </div>
                       </div>
                     ))}
@@ -574,33 +578,33 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
 
               {/* ETAPA 4: HORÁRIO (BLOQUEIO TOTAL DE HORÁRIOS OCUPADOS) */}
               {step === 4 && (
-                <div className="space-y-4 animate-fadeIn">
+                <div className="space-y-3.5 sm:space-y-4 animate-fadeIn">
                   <div className="flex justify-between items-center">
                     <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
                       <span className="w-5 h-5 rounded-full bg-emerald-500 text-slate-950 text-xs flex items-center justify-center font-bold">4</span>
-                      Escolha o Horário de Início
+                      Horário de Início
                     </h3>
                     <button onClick={() => setStep(3)} className="text-xs text-emerald-400 hover:underline">
-                      Alterar profissional
+                      Alterar barbeiro
                     </button>
                   </div>
 
-                  <div className="bg-[#0B1120] p-3 rounded-xl border border-slate-800 text-xs text-slate-300 flex items-center justify-between">
+                  <div className="bg-[#0B1120] p-2.5 rounded-xl border border-slate-800 text-xs text-slate-300 flex items-center justify-between">
                     <span>Profissional: <strong className="text-white">{selectedBarber?.full_name}</strong></span>
                     <span className="text-emerald-400 font-medium">Duração: {totalDuration} min</span>
                   </div>
 
                   <div className="flex items-center justify-between text-xs text-slate-400">
                     <span>
-                      Data: <strong className="text-emerald-400">{new Date(selectedDate + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}</strong>
+                      Dia: <strong className="text-emerald-400">{new Date(selectedDate + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}</strong>
                     </span>
-                    <span className="flex items-center gap-3 text-[11px]">
-                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400"></span> Disponível</span>
+                    <span className="flex items-center gap-2 text-[10px]">
+                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400"></span> Livre</span>
                       <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-slate-600"></span> Ocupado</span>
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5 max-h-64 overflow-y-auto pr-1">
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-60 overflow-y-auto pr-1">
                     {timeSlots.map((time) => {
                       const isOccupied = isTimeSlotOccupied(
                         time,
@@ -620,12 +624,12 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
                             setBookingError('');
                             setStep(5);
                           }}
-                          className={`py-2.5 px-2 rounded-xl font-mono text-xs font-bold border transition-all flex items-center justify-center gap-1.5 ${
+                          className={`py-2.5 px-2 rounded-xl font-mono text-xs font-bold border transition-all flex items-center justify-center gap-1 ${
                             isOccupied
                               ? 'bg-[#0B1120]/40 text-slate-600 border-slate-900/80 cursor-not-allowed line-through opacity-50 shadow-inner'
-                              : 'bg-[#0B1120] text-emerald-400 border-slate-800 hover:border-emerald-500 hover:bg-emerald-500/10 cursor-pointer'
+                              : 'bg-[#0B1120] text-emerald-400 border-slate-800 hover:border-emerald-500 hover:bg-emerald-500/10 cursor-pointer active:scale-95'
                           }`}
-                          title={isOccupied ? 'Horário já reservado ou indisponível' : 'Horário livre para agendamento'}
+                          title={isOccupied ? 'Horário indisponível' : 'Horário livre'}
                         >
                           {isOccupied && <Lock className="w-3 h-3 text-slate-600 shrink-0" />}
                           <span>{time}</span>
@@ -638,11 +642,11 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
 
               {/* ETAPA 5: DADOS DE CONTATO DO CLIENTE */}
               {step === 5 && (
-                <form onSubmit={handleFinishBooking} className="space-y-4 animate-fadeIn">
+                <form onSubmit={handleFinishBooking} className="space-y-3.5 sm:space-y-4 animate-fadeIn">
                   <div className="flex justify-between items-center">
                     <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
                       <span className="w-5 h-5 rounded-full bg-emerald-500 text-slate-950 text-xs flex items-center justify-center font-bold">5</span>
-                      Seus Dados & Resumo do Pedido
+                      Seus Dados de Contato
                     </h3>
                     <button type="button" onClick={() => setStep(4)} className="text-xs text-emerald-400 hover:underline">
                       Alterar horário
@@ -650,11 +654,11 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
                   </div>
 
                   {/* Resumo dos Serviços Escolhidos */}
-                  <div className="bg-[#0B1120] p-4 rounded-2xl border border-slate-800 text-xs space-y-2.5 text-slate-300">
+                  <div className="bg-[#0B1120] p-3.5 rounded-2xl border border-slate-800 text-xs space-y-2 text-slate-300">
                     <p><span className="text-slate-500">Profissional:</span> <strong className="text-white">{selectedBarber?.full_name}</strong></p>
                     <p><span className="text-slate-500">Data e Horário:</span> <strong className="text-emerald-400 font-mono">{selectedTime}</strong> no dia {new Date(selectedDate + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}</p>
 
-                    <div className="border-t border-slate-800/80 pt-2 space-y-1">
+                    <div className="border-t border-slate-800/80 pt-1.5 space-y-1">
                       <span className="text-slate-400 font-semibold block">Serviços Inclusos ({selectedServices.length}):</span>
                       {selectedServices.map(s => (
                         <div key={s.id} className="flex justify-between text-xs py-0.5">
@@ -664,7 +668,7 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
                       ))}
                     </div>
 
-                    <div className="flex justify-between border-t border-slate-800/80 pt-2 font-bold">
+                    <div className="flex justify-between border-t border-slate-800/80 pt-1.5 font-bold">
                       <span className="text-slate-300">Total ({totalDuration} min):</span>
                       <span className="text-emerald-400 font-mono text-sm">R$ {totalPrice.toFixed(2)}</span>
                     </div>
@@ -680,7 +684,7 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
                       value={clientName}
                       onChange={(e) => setClientName(e.target.value)}
                       placeholder="Ex: Carlos Eduardo"
-                      className="w-full bg-[#0B1120] border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:border-emerald-500 focus:outline-none"
+                      className="w-full bg-[#0B1120] border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none"
                     />
                   </div>
 
@@ -694,13 +698,13 @@ export const TenantBookingView: React.FC<TenantBookingViewProps> = ({
                       value={clientPhone}
                       onChange={(e) => setClientPhone(e.target.value)}
                       placeholder="(84) 99999-0000"
-                      className="w-full bg-[#0B1120] border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:border-emerald-500 focus:outline-none"
+                      className="w-full bg-[#0B1120] border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none"
                     />
                   </div>
 
                   <button
                     type="submit"
-                    className="w-full py-4 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-2xl transition-all shadow-lg shadow-emerald-500/20 text-sm mt-2 flex items-center justify-center gap-2 cursor-pointer"
+                    className="w-full py-3.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-2xl transition-all shadow-lg shadow-emerald-500/20 text-sm mt-1 flex items-center justify-center gap-2 cursor-pointer active:scale-98"
                   >
                     <MessageSquare className="w-4 h-4 fill-slate-950" />
                     Confirmar Agendamento (R$ {totalPrice.toFixed(2)})

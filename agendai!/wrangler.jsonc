@@ -8,5 +8,11 @@
   "assets": {
     "directory": "./dist",
     "not_found_handling": "single-page-application"
-  }
+  },
+  "kv_namespaces": [
+    {
+      "binding": "AGENDAI_KV",
+      "id": "agendai_kv_storage"
+    }
+  ]
 }

@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { 
   Building2, Scissors, LogIn, UserPlus, Lock, 
-  Mail, Phone, Sparkles, ArrowRight, ShieldCheck, User, Smartphone, Upload, Check
+  Mail, Phone, Sparkles, ArrowRight, ShieldCheck, User, Smartphone, Upload, Check, Loader2, Cloud
 } from 'lucide-react';
 import { Organization } from '../types';
 import { INITIAL_ORG, INITIAL_SERVICES, INITIAL_BARBERS, INITIAL_APPOINTMENTS, INITIAL_CLIENTS } from '../data/mockData';
+import { loadBarbershopFromCloud } from '../services/cloudSync';
 
 interface AuthViewProps {
   onLogin: (org: Organization) => void;
@@ -30,6 +31,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
+  const [isLoadingCloud, setIsLoadingCloud] = useState(false);
 
   // Register Form
   const [salonName, setSalonName] = useState('');
@@ -59,25 +61,59 @@ export const AuthView: React.FC<AuthViewProps> = ({
     setSlug(generateSlug(val));
   };
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
+    setIsLoadingCloud(true);
 
-    // Verificar se existe organização salva com este e-mail ou nome
-    const found = savedOrganizations.find(
-      org => (org.email && org.email.toLowerCase() === loginEmail.toLowerCase()) ||
-             (org.phone && org.phone.includes(loginEmail)) ||
-             (org.name && org.name.toLowerCase() === loginEmail.toLowerCase())
+    const emailTrimmed = loginEmail.trim();
+
+    // 1. Verificar se existe organização salva localmente neste dispositivo
+    const foundLocal = savedOrganizations.find(
+      org => (org.email && org.email.toLowerCase() === emailTrimmed.toLowerCase()) ||
+             (org.phone && org.phone.includes(emailTrimmed)) ||
+             (org.name && org.name.toLowerCase() === emailTrimmed.toLowerCase()) ||
+             (org.slug && org.slug.toLowerCase() === emailTrimmed.toLowerCase())
     );
 
-    if (found) {
-      onLogin(found);
-    } else if (savedOrganizations.length > 0) {
+    if (foundLocal) {
+      setIsLoadingCloud(false);
+      onLogin(foundLocal);
+      return;
+    }
+
+    // 2. Buscar automaticamente na Nuvem (Cloudflare / Cloud) pelo email ou slug
+    try {
+      const cloudData = await loadBarbershopFromCloud(emailTrimmed);
+      if (cloudData && cloudData.org) {
+        // Salva todos os dados recebidos da nuvem no dispositivo
+        localStorage.setItem('agendai_current_org', JSON.stringify(cloudData.org));
+        localStorage.setItem('agendai_all_orgs', JSON.stringify(cloudData.savedOrgs));
+        localStorage.setItem('agendai_services', JSON.stringify(cloudData.services));
+        localStorage.setItem('agendai_barbers', JSON.stringify(cloudData.barbers));
+        localStorage.setItem('agendai_appointments', JSON.stringify(cloudData.appointments));
+        localStorage.setItem('agendai_clients', JSON.stringify(cloudData.clients));
+        localStorage.setItem('agendai_session_active', 'true');
+
+        setIsLoadingCloud(false);
+        onLogin(cloudData.org);
+        window.location.reload();
+        return;
+      }
+    } catch (err) {
+      console.warn('Erro ao consultar nuvem:', err);
+    }
+
+    setIsLoadingCloud(false);
+
+    // 3. Se houver alguma conta salva no dispositivo, entra
+    if (savedOrganizations.length > 0) {
       onLogin(savedOrganizations[0]);
     } else {
+      // 4. Criação de acesso direto
       onLogin({
         ...INITIAL_ORG,
-        email: loginEmail || 'admin@barbearia.com',
+        email: emailTrimmed || 'admin@barbearia.com',
       });
     }
   };
@@ -134,7 +170,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
           </div>
           <h2 className="text-2xl font-bold text-white tracking-tight">AgendAI</h2>
           <p className="text-xs text-slate-400">
-            Gestão & Agendamento para Barbearias
+            Gestão & Agendamento com Nuvem Cloudflare
           </p>
         </div>
 
@@ -196,16 +232,19 @@ export const AuthView: React.FC<AuthViewProps> = ({
 
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1.5">
-                <Mail className="w-3.5 h-3.5 text-emerald-400" /> E-mail ou Telefone
+                <Mail className="w-3.5 h-3.5 text-emerald-400" /> E-mail de Login
               </label>
               <input
                 type="text"
                 required
                 value={loginEmail}
                 onChange={(e) => setLoginEmail(e.target.value)}
-                placeholder="seu-email@exemplo.com ou (84) 99999-0000"
+                placeholder="seu-email@exemplo.com ou barbearia-slug"
                 className="w-full bg-[#0B1120] border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:border-emerald-500 focus:outline-none"
               />
+              <p className="text-[10px] text-slate-500 mt-1">
+                Ao entrar, seus dados serão buscados automaticamente na nuvem Cloudflare.
+              </p>
             </div>
 
             <div>
@@ -230,10 +269,20 @@ export const AuthView: React.FC<AuthViewProps> = ({
 
             <button
               type="submit"
-              className="w-full py-3.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-sm transition-all shadow-lg shadow-emerald-500/10 flex items-center justify-center gap-2 active:scale-98"
+              disabled={isLoadingCloud}
+              className="w-full py-3.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-sm transition-all shadow-lg shadow-emerald-500/10 flex items-center justify-center gap-2 active:scale-98 disabled:opacity-50"
             >
-              <LogIn className="w-4 h-4" />
-              Acessar Painel
+              {isLoadingCloud ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Buscando na Nuvem...</span>
+                </>
+              ) : (
+                <>
+                  <LogIn className="w-4 h-4" />
+                  <span>Acessar Painel</span>
+                </>
+              )}
             </button>
           </form>
         ) : (
@@ -329,12 +378,12 @@ export const AuthView: React.FC<AuthViewProps> = ({
               type="submit"
               className="w-full py-3.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-sm transition-all shadow-lg shadow-emerald-500/10 mt-2 active:scale-98"
             >
-              Criar Conta e Entrar
+              Criar Conta e Salvar na Nuvem
             </button>
           </form>
         )}
 
-        {/* OPÇÃO DE SINCRONIZAÇÃO / IMPORTAR DO COMPUTADOR */}
+        {/* OPÇÃO DE IMPORTAR CÓDIGO DIRETO */}
         <div className="pt-3 border-t border-slate-800 space-y-2 text-center">
           <button
             type="button"
@@ -342,13 +391,13 @@ export const AuthView: React.FC<AuthViewProps> = ({
             className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-emerald-400 transition-colors"
           >
             <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
-            <span>{showImportSync ? 'Ocultar importação' : 'Já tem dados no computador? Importar aqui'}</span>
+            <span>{showImportSync ? 'Ocultar importação' : 'Colar código de sincronização do computador'}</span>
           </button>
 
           {showImportSync && (
             <div className="p-3 bg-[#0B1120] rounded-2xl border border-slate-800 space-y-2 text-left animate-fadeIn">
               <label className="block text-[11px] text-slate-400">
-                Cole o link ou código de sincronização gerado no seu computador:
+                Cole o link ou código de sincronização:
               </label>
               <input
                 type="text"
@@ -363,7 +412,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                 className="w-full py-2 bg-emerald-500 text-slate-950 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5"
               >
                 <Upload className="w-3.5 h-3.5" />
-                Importar e Entrar no Painel
+                Importar e Entrar
               </button>
             </div>
           )}
