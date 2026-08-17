@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "ligero",
+  "name": "agendai",
   "compatibility_date": "2026-08-17",
   "observability": {
     "enabled": true
